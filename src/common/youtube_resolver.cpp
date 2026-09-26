@@ -4,6 +4,8 @@
 #include <atomic>
 #include <cctype>
 #include <chrono>
+#include <mutex>
+#include <cstdlib>
 #include <optional>
 #include <sstream>
 #include <string>
@@ -107,6 +109,14 @@ std::optional<std::string> extract_path_video_id(
     return url.substr(id_start, id_end == std::string::npos ? std::string::npos : id_end - id_start);
 }
 
+// Quality class of a format (what YouTube calls 720p): the short side, so a vertical
+// 720x1280 stream counts as 720p. Comparing plain heights picked 360p for vertical videos.
+int format_quality_height(const json& format) {
+    const int height = format.value("height", -1);
+    const int width = format.value("width", -1);
+    return (width > 0 && height > 0) ? std::min(width, height) : height;
+}
+
 std::optional<json> pick_preferred_format(const json& formats, int preferred_height) {
     if (!formats.is_array()) {
         return std::nullopt;
@@ -135,7 +145,7 @@ std::optional<json> pick_preferred_format(const json& formats, int preferred_hei
             return format;
         }
 
-        const int height = format.value("height", -1);
+        const int height = format_quality_height(format);
         if (height == preferred_height) {
             preferred_height_match = format;
             continue;
@@ -209,7 +219,7 @@ std::optional<json> pick_preferred_adaptive_video_format(const json& adaptive_fo
             continue;
         }
 
-        const int height = format.value("height", -1);
+        const int height = format_quality_height(format);
         if (height == preferred_height) {
             preferred_height_match = format;
             continue;
@@ -392,6 +402,25 @@ std::string fetch_web_visitor_data(HttpClient* client, std::string& error_messag
     return {};
 }
 
+// visitorData stays valid for a long time: reuse it for 30 minutes instead of spending a
+// request (a fresh TLS handshake on the Switch) on it before every video.
+std::string session_visitor_data(HttpClient* client, std::string& error_message, bool refresh) {
+    static std::mutex mutex;
+    static std::string cached;
+    static std::chrono::steady_clock::time_point fetched_at;
+    std::lock_guard<std::mutex> lock(mutex);
+    const auto now = std::chrono::steady_clock::now();
+    if (!refresh && !cached.empty() && now - fetched_at < std::chrono::minutes(30)) {
+        return cached;
+    }
+    std::string fresh = fetch_web_visitor_data(client, error_message);
+    if (!fresh.empty()) {
+        cached = fresh;
+        fetched_at = now;
+    }
+    return fresh;
+}
+
 std::vector<HttpHeader> android_player_headers(const std::string& cookie = {}) {
     std::vector<HttpHeader> headers = {
         {"Content-Type", "application/json"},
@@ -462,6 +491,7 @@ int extract_int_attribute(const std::string& line, const std::string& key) {
     }
 }
 
+// Quality class of an HLS variant: the short side of RESOLUTION (see format_quality_height).
 int extract_resolution_height(const std::string& stream_inf) {
     const std::string resolution = extract_attribute(stream_inf, "RESOLUTION");
     const size_t separator = resolution.find('x');
@@ -470,7 +500,9 @@ int extract_resolution_height(const std::string& stream_inf) {
     }
 
     try {
-        return std::stoi(resolution.substr(separator + 1));
+        const int width = std::stoi(resolution.substr(0, separator));
+        const int height = std::stoi(resolution.substr(separator + 1));
+        return (width > 0 && height > 0) ? std::min(width, height) : height;
     } catch (...) {
         return -1;
     }
@@ -564,12 +596,32 @@ std::optional<MediaEntry> pick_preferred_media_entry(
     return fallback;
 }
 
+// Returns the #EXT-X-MEDIA line with its URI attribute replaced by an absolute URL.
+std::string with_absolute_uri(const std::string& line, const std::string& uri) {
+    const std::string key = "URI=\"";
+    const size_t start = line.find(key);
+    if (start == std::string::npos) {
+        return line;
+    }
+    const size_t value_start = start + key.size();
+    const size_t value_end = line.find('"', value_start);
+    if (value_end == std::string::npos) {
+        return line;
+    }
+    return line.substr(0, value_start) + uri + line.substr(value_end);
+}
+
 struct SelectedHlsPlayback {
     std::string video_url;
     std::string audio_url;
     std::string audio_language;
     int bitrate = 0;
     int selected_height = -1;
+    std::optional<double> loudness_lufs;
+    // Master with only the chosen variant and audio rendition. FFmpeg opens and probes
+    // every playlist a master lists (16 video variants plus audio renditions here): with
+    // the full master mpv needed ~8 s to the first frame on a PC, with this one ~2 s.
+    std::string master_playlist;
 };
 
 std::optional<SelectedHlsPlayback> pick_preferred_hls_playback(
@@ -656,6 +708,14 @@ std::optional<SelectedHlsPlayback> pick_preferred_hls_playback(
     result.video_url = selected_uri;
     result.bitrate = selected_bitrate;
     result.selected_height = selected_height;
+    const std::string loudness = extract_attribute(selected_stream_inf, "YT-EXT-ABSOLUTE-LOUDNESS");
+    if (!loudness.empty()) {
+        char* end = nullptr;
+        const double value = std::strtod(loudness.c_str(), &end);
+        if (end != loudness.c_str()) {
+            result.loudness_lufs = value;
+        }
+    }
     std::optional<MediaEntry> selected_audio_entry;
     if (!selected_audio_group.empty()) {
         selected_audio_entry = pick_preferred_media_entry(media_entries, selected_audio_group, "AUDIO");
@@ -664,9 +724,47 @@ std::optional<SelectedHlsPlayback> pick_preferred_hls_playback(
             result.audio_language = selected_audio_entry->language;
         }
     }
+    // The variant goes first: FFmpeg only recognises HLS when "#EXT-X-STREAM-INF:" is within
+    // the first bytes it probes, and the audio line (its URI alone is ~1.5 KB) pushed it out.
+    // mpv then parsed the file as a plain playlist and played the video playlist, silent.
+    result.master_playlist = "#EXTM3U\n#EXT-X-INDEPENDENT-SEGMENTS\n" + selected_stream_inf + "\n"
+        + selected_uri + "\n";
+    if (selected_audio_entry.has_value()) {
+        result.master_playlist +=
+            with_absolute_uri(selected_audio_entry->raw_line, selected_audio_entry->uri) + "\n";
+    }
     return result;
 }
 
+
+// Subtitle tracks of a player response (captions.playerCaptionsTracklistRenderer).
+std::vector<CaptionTrack> extract_caption_tracks(const json& player_response) {
+    std::vector<CaptionTrack> tracks;
+    const json list = player_response.value("captions", json::object())
+                          .value("playerCaptionsTracklistRenderer", json::object())
+                          .value("captionTracks", json::array());
+    for (const auto& entry : list) {
+        if (!entry.is_object()) {
+            continue;
+        }
+        CaptionTrack track;
+        track.base_url = get_string(entry, "baseUrl");
+        track.language_code = get_string(entry, "languageCode");
+        const json name = entry.value("name", json::object());
+        track.name = get_string(name, "simpleText");
+        if (track.name.empty()) {
+            for (const auto& run : name.value("runs", json::array())) {
+                track.name += get_string(run, "text");
+            }
+        }
+        track.auto_generated = get_string(entry, "kind") == "asr";
+        track.translatable = entry.value("isTranslatable", false);
+        if (!track.base_url.empty() && !track.language_code.empty()) {
+            tracks.push_back(std::move(track));
+        }
+    }
+    return tracks;
+}
 
 std::optional<ResolvedPlayback> resolve_visionos_hls_playback(
     HttpClient* client,
@@ -707,6 +805,7 @@ std::optional<ResolvedPlayback> resolve_visionos_hls_playback(
         error_message = "visionOS HLS manifest unavailable";
         return std::nullopt;
     }
+    std::vector<CaptionTrack> captions = extract_caption_tracks(*root);
 
     const auto master_manifest = client->get(hls_manifest_url);
     if (!master_manifest.has_value() || master_manifest->empty()) {
@@ -723,9 +822,13 @@ std::optional<ResolvedPlayback> resolve_visionos_hls_playback(
 
     ResolvedPlayback result;
     result.stream_url = hls_manifest_url;
+    result.playlist_body = selected_playback->master_playlist;
+    result.hls_master_url = hls_manifest_url;
     result.referer = "https://www.youtube.com/watch?v=" + video_id;
     result.http_header_fields = kYoutubeOriginHeader;
     result.hls_bitrate = selected_playback->bitrate;
+    result.loudness_lufs = selected_playback->loudness_lufs;
+    result.captions = std::move(captions);
     // The visionOS HLS master lists several audio renditions (incl. YouTube AI
     // "dubbed-auto" tracks) with none marked DEFAULT, so mpv otherwise picks the
     // dub or silence. Steer mpv to the original-language rendition via --alang.
@@ -810,7 +913,13 @@ std::optional<ResolvedPlayback> YouTubeResolver::resolve_internal(
 
     report_status(on_status, "RESOLVING YOUTUBE STREAM", "CONTACTING PLAYER API");
     const AppSettings settings = SettingsStore::instance().settings();
-    const int preferred_height = preferred_height_for_quality(settings.playback_quality);
+    int preferred_height = preferred_height_for_quality(settings.playback_quality);
+    // Software decoding (the default: the nvtegra path showed glitches) cannot keep up
+    // with 1080p on the Switch CPU, so "Best" stays at 720p then, docked or not.
+    if (!settings.hardware_decoding && settings.playback_quality == PlaybackQualityMode::BEST
+        && preferred_height > 720) {
+        preferred_height = 720;
+    }
     // Low quality (<=360p) is served most reliably by the muxed progressive
     // stream (itag 18), which is small and throttle-free. Higher qualities go
     // through the adaptive/HLS path so we can reach 720p and 1080p.
@@ -819,6 +928,37 @@ std::optional<ResolvedPlayback> YouTubeResolver::resolve_internal(
     logf("youtube: quality mode=%d preferred_height=%d",
          static_cast<int>(settings.playback_quality),
          preferred_height);
+
+    // HLS first: when it works (nearly always) the ~400 KB ANDROID player response, which only
+    // feeds the progressive/adaptive fallbacks, is never needed. On the Switch each request
+    // costs a TLS handshake, so skipping it shortens the time to the first frame.
+    std::string visitor_error;
+    std::string vision_error;
+    std::string visitor_data;
+    if (allow_adaptive) {
+        report_status(on_status, "RESOLVING YOUTUBE STREAM", "REQUESTING HLS STREAM");
+        // One transient failure used to drop straight to a throttled full-file download,
+        // so retry once with fresh visitorData.
+        for (int attempt = 0; attempt < 2; ++attempt) {
+            if (attempt > 0) {
+                logf("youtube: visionOS HLS retry video=%s error=%s",
+                     video_id->c_str(),
+                     visitor_data.empty() ? visitor_error.c_str() : vision_error.c_str());
+            }
+            visitor_data = session_visitor_data(client_, visitor_error, attempt > 0);
+            if (visitor_data.empty()) {
+                continue;
+            }
+            if (auto vision_playback = resolve_visionos_hls_playback(
+                    client_, *video_id, visitor_data, preferred_height, vision_error)) {
+                return vision_playback;
+            }
+        }
+        logf("youtube: visionOS %dp HLS unavailable video=%s error=%s",
+             preferred_height,
+             video_id->c_str(),
+             visitor_data.empty() ? visitor_error.c_str() : vision_error.c_str());
+    }
 
     const auto root = fetch_player_response(
         client_,
@@ -850,39 +990,6 @@ std::optional<ResolvedPlayback> YouTubeResolver::resolve_internal(
         const auto adaptive_playback =
             build_adaptive_split_playback(
                 streaming.value("adaptiveFormats", json::array()), *video_id, preferred_height);
-
-        // visitorData unlocks the Apple Vision Pro (visionOS) player response,
-        // which is currently the only client that yields full-length 720p/1080p
-        // streams without a PO token. Fetched once and reused by the UMP path.
-        std::string visitor_error;
-        const std::string visitor_data = fetch_web_visitor_data(client_, visitor_error);
-
-        report_status(on_status, "RESOLVING YOUTUBE STREAM", "REQUESTING HLS STREAM");
-        std::string vision_error;
-        if (!visitor_data.empty()) {
-            if (const auto vision_playback = resolve_visionos_hls_playback(
-                    client_, *video_id, visitor_data, preferred_height, vision_error)) {
-                auto result = *vision_playback;
-                // Fallback: progressive (ratebypass=yes, no throttle) > adaptive.
-                if (progressive_playback.has_value()) {
-                    result.fallback_stream_url = progressive_playback->stream_url;
-                    result.fallback_referer = progressive_playback->referer;
-                    result.fallback_http_header_fields = progressive_playback->http_header_fields;
-                    result.fallback_quality_label = progressive_playback->quality_label;
-                } else if (adaptive_playback.has_value()) {
-                    result.fallback_stream_url = adaptive_playback->stream_url;
-                    result.fallback_referer = adaptive_playback->referer;
-                    result.fallback_http_header_fields = adaptive_playback->http_header_fields;
-                    result.fallback_quality_label = adaptive_playback->quality_label;
-                    result.fallback_external_audio_url = adaptive_playback->external_audio_url;
-                }
-                return result;
-            }
-        }
-        logf("youtube: visionOS %dp HLS unavailable video=%s error=%s",
-             preferred_height,
-             video_id->c_str(),
-             visitor_data.empty() ? visitor_error.c_str() : vision_error.c_str());
 
 #ifdef __SWITCH__
         // Legacy tokenless Android VR UMP path (kept as a last resort; YouTube now

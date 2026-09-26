@@ -2,9 +2,61 @@
 
 #include <borealis.hpp>
 
+#include <functional>
+#include <string>
+
+#include "newpipe/i18n.hpp"
 #include "view/auto_tab_frame.hpp"
 
 namespace newpipe {
+
+// True while the focus is somewhere inside `root` (a page), false on the sidebar.
+inline bool focus_inside(brls::View* root) {
+    for (brls::View* view = brls::Application::getCurrentFocus(); view; view = view->getParent()) {
+        if (view == root) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// L and R step through the chips (tabs) at the top of a page: step(-1) and step(+1). One
+// hint stands for both: the R glyph leads its text and the hint bar draws it beside the L one.
+inline std::string tab_step_hint() {
+    return std::string(" ") + tr("hints/tabs");
+}
+
+inline void register_tab_step(brls::View* view, const std::function<void(int)>& step) {
+    view->registerAction(tab_step_hint(), brls::ControllerButton::BUTTON_LB, [step](brls::View*) {
+        step(-1);
+        return true;
+    });
+    view->registerAction(tab_step_hint(), brls::ControllerButton::BUTTON_RB, [step](brls::View*) {
+        step(1);
+        return true;
+    }, true);
+}
+
+// The same for a sidebar tab: mirrored on its sidebar item, as the other tab actions.
+inline void register_tab_step(AttachedView* tab, const std::function<void(int)>& step) {
+    tab->registerTabAction(tab_step_hint(), brls::ControllerButton::BUTTON_LB, [step](brls::View*) {
+        step(-1);
+        return true;
+    });
+    tab->registerTabAction(tab_step_hint(), brls::ControllerButton::BUTTON_RB, [step](brls::View*) {
+        step(1);
+        return true;
+    }, true);
+}
+
+// Rows of Shorts are taller than half the screen. A NATURAL frame moves the focus to the next
+// row only once all of it is in view and a quick press scrolls less than that, so the focus
+// ended on the frame itself, where nothing shows it. Such rows are centred instead.
+inline void set_grid_scrolling(brls::ScrollingFrame* frame, bool tall_rows) {
+    if (frame) {
+        frame->setScrollingBehavior(tall_rows ? brls::ScrollingBehavior::CENTERED : brls::ScrollingBehavior::NATURAL);
+    }
+}
 
 // Call this before clearing a card grid.
 //

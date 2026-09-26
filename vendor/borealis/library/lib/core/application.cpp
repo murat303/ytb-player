@@ -1277,7 +1277,12 @@ int Application::getFont(std::string fontName)
 int Application::getDefaultFont()
 {
 #ifdef __SWITCH__
-    static int regular = Application::getFont(FONT_CHINESE_SIMPLIFIED);
+    // The Standard shared font must win for Latin text: the Chinese font carries pinyin
+    // glyphs such as a diaeresis u at CJK metrics, which left a gap after every Turkish or
+    // German umlaut. switch_font.cpp chains the CJK, Korean and icon fonts behind it.
+    static int regular = Application::getFont(FONT_REGULAR) != FONT_INVALID
+        ? Application::getFont(FONT_REGULAR)
+        : Application::getFont(FONT_CHINESE_SIMPLIFIED);
 #else
     static int regular = Application::getFont(FONT_REGULAR);
 #endif

@@ -40,15 +40,15 @@ jobs:
       - name: Prepare release artifacts
         run: |
           mkdir -p dist
-          cp cmake-build-switch/switch_newpipe.nro dist/switch_newpipe.nro
-          sha256sum dist/switch_newpipe.nro > dist/SHA256SUMS.txt
+          cp cmake-build-switch/ytb-player.nro dist/ytb-player.nro
+          sha256sum dist/ytb-player.nro > dist/SHA256SUMS.txt
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
-          name: switch-newpipe-release
+          name: ytb-player-release
           path: |
-            dist/switch_newpipe.nro
+            dist/ytb-player.nro
             dist/SHA256SUMS.txt
 
       - name: Upload assets to GitHub Release
@@ -56,7 +56,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            dist/switch_newpipe.nro
+            dist/ytb-player.nro
             dist/SHA256SUMS.txt
           fail_on_unmatched_files: true
           overwrite_files: true

@@ -60,8 +60,17 @@ Hint::Hint(std::shared_ptr<Action> action, bool allowAButtonTouch)
     this->inflateFromXMLString(hintXML);
     this->setFocusable(false);
 
-    icon->setText(getKeyIcon(static_cast<ControllerButton>(action->getButton())));
-    hint->setText(action->getHintText());
+    // A hint standing for two buttons (L and R) starts with the second one's glyph: both are
+    // drawn at the icon size (the glyphs are U+E0C0..U+E0FF, EE 83 xx in UTF-8).
+    std::string keys = getKeyIcon(static_cast<ControllerButton>(action->getButton()));
+    std::string text = action->getHintText();
+    if (text.size() > 3 && static_cast<unsigned char>(text[0]) == 0xEE && static_cast<unsigned char>(text[1]) == 0x83)
+    {
+        keys += text.substr(0, 3);
+        text = text.substr(text[3] == ' ' ? 4 : 3);
+    }
+    icon->setText(keys);
+    hint->setText(text);
 
     if ((action->getButton() != BUTTON_A || allowAButtonTouch) && action->isAvailable() && !Application::isInputBlocks())
     {

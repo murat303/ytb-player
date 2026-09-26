@@ -5,6 +5,8 @@
 #include <iterator>
 
 #include "nlohmann/json.hpp"
+#include "newpipe/app_paths.hpp"
+#include "newpipe/content_locale.hpp"
 #include "newpipe/log.hpp"
 
 namespace newpipe {
@@ -14,6 +16,7 @@ using nlohmann::json;
 
 constexpr size_t kHistoryLimit = 120;
 constexpr size_t kFavoriteLimit = 200;
+constexpr size_t kSearchLimit = 12;
 
 json serialize_stream_item(const StreamItem& item) {
     return {
@@ -24,6 +27,7 @@ json serialize_stream_item(const StreamItem& item) {
         {"channel_url", item.channel_url},
         {"channel_id", item.channel_id},
         {"thumbnail_url", item.thumbnail_url},
+        {"channel_avatar_url", item.channel_avatar_url},
         {"duration_text", item.duration_text},
         {"view_count_text", item.view_count_text},
         {"published_text", item.published_text},
@@ -47,6 +51,7 @@ StreamItem deserialize_stream_item(const json& node) {
     item.channel_url = get_string(node, "channel_url");
     item.channel_id = get_string(node, "channel_id");
     item.thumbnail_url = get_string(node, "thumbnail_url");
+    item.channel_avatar_url = get_string(node, "channel_avatar_url");
     item.duration_text = get_string(node, "duration_text");
     item.view_count_text = get_string(node, "view_count_text");
     item.published_text = get_string(node, "published_text");
@@ -89,11 +94,7 @@ void upsert_front(std::vector<StreamItem>& items, const StreamItem& item, size_t
 }  // namespace
 
 std::string default_library_store_path() {
-#ifdef __SWITCH__
-    return "sdmc:/switch/switch_newpipe_library.json";
-#else
-    return "switch_newpipe_library.json";
-#endif
+    return app_file_path("library.json");
 }
 
 LibraryStore& LibraryStore::instance() {
@@ -124,19 +125,25 @@ bool LibraryStore::load(std::string* error_message) {
     const json root = json::parse(raw, nullptr, false);
     if (root.is_discarded() || !root.is_object()) {
         if (error_message) {
-            *error_message = "라이브러리 저장 파일 파싱 실패";
+            *error_message = localized("Kitaplık dosyası çözümlenemedi", "Could not read the library file");
         }
         return false;
     }
 
     this->history_items_.clear();
     this->favorite_items_.clear();
+    this->searches_.clear();
 
     for (const auto& node : root.value("history", json::array())) {
         this->history_items_.push_back(deserialize_stream_item(node));
     }
     for (const auto& node : root.value("favorites", json::array())) {
         this->favorite_items_.push_back(deserialize_stream_item(node));
+    }
+    for (const auto& node : root.value("searches", json::array())) {
+        if (node.is_string()) {
+            this->searches_.push_back(node.get<std::string>());
+        }
     }
 
     this->loaded_ = true;
@@ -263,6 +270,31 @@ bool LibraryStore::ensure_loaded(std::string* error_message) {
     return this->load(error_message);
 }
 
+std::vector<std::string> LibraryStore::search_history() {
+    std::string ignored_error;
+    this->ensure_loaded(&ignored_error);
+    std::lock_guard<std::mutex> lock(this->mutex_);
+    return this->searches_;
+}
+
+bool LibraryStore::add_search(const std::string& query, std::string* error_message) {
+    if (query.empty()) {
+        return true;
+    }
+    if (!this->ensure_loaded(error_message)) {
+        return false;
+    }
+    {
+        std::lock_guard<std::mutex> lock(this->mutex_);
+        this->searches_.erase(std::remove(this->searches_.begin(), this->searches_.end(), query), this->searches_.end());
+        this->searches_.insert(this->searches_.begin(), query);
+        if (this->searches_.size() > kSearchLimit) {
+            this->searches_.resize(kSearchLimit);
+        }
+    }
+    return this->persist(error_message);
+}
+
 bool LibraryStore::persist(std::string* error_message) {
     json root;
     {
@@ -276,11 +308,13 @@ bool LibraryStore::persist(std::string* error_message) {
         for (const auto& item : this->favorite_items_) {
             root["favorites"].push_back(serialize_stream_item(item));
         }
+
+        root["searches"] = this->searches_;
     }
 
     if (!write_text_file(default_library_store_path(), root.dump(2))) {
         if (error_message) {
-            *error_message = "라이브러리 저장 실패";
+            *error_message = localized("Kitaplık kaydedilemedi", "Could not save the library");
         }
         return false;
     }

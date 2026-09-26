@@ -276,6 +276,13 @@ void GLFWInputManager::updateUnifiedControllerState(ControllerState* state)
         state->buttons[BUTTON_B] |= glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_RIGHT) == GLFW_PRESS;
     }
     state->buttons[BUTTON_X] |= (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_MIDDLE) == GLFW_PRESS);
+    // Screenshot tests drive the desktop build with xdotool: letter keys for the other buttons.
+    state->buttons[BUTTON_X] |= glfwGetKey(this->window, GLFW_KEY_X) != 0;
+    state->buttons[BUTTON_Y] |= glfwGetKey(this->window, GLFW_KEY_Y) != 0;
+    state->buttons[BUTTON_LB] |= glfwGetKey(this->window, GLFW_KEY_Q) != 0;
+    state->buttons[BUTTON_RB] |= glfwGetKey(this->window, GLFW_KEY_E) != 0;
+    state->buttons[BUTTON_START] |= glfwGetKey(this->window, GLFW_KEY_P) != 0;
+    state->buttons[BUTTON_BACK] |= glfwGetKey(this->window, GLFW_KEY_M) != 0;
 
     state->buttons[BUTTON_UP] |= glfwGetKey(this->window, GLFW_KEY_UP) != 0;
     state->buttons[BUTTON_RIGHT] |= glfwGetKey(this->window, GLFW_KEY_RIGHT) != 0;

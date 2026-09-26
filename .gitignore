@@ -51,3 +51,10 @@ reference/
 # OS
 .DS_Store
 Thumbs.db
+
+# The app's own files when it runs from the source tree (desktop builds); the session and
+# cookie files hold a YouTube login.
+/ytb-player/
+/switch_newpipe_*.json
+/switch_newpipe_auth.txt
+*cookies*.txt

@@ -131,6 +131,6 @@ docker run --rm \
       -DCMAKE_BUILD_TYPE=Release \
       -DPLATFORM_SWITCH=ON \
       -DUSE_DEKO3D=OFF
-    cmake --build '"$BUILD_DIR"' -j$(nproc) --target switch_newpipe.nro
+    cmake --build '"$BUILD_DIR"' -j$(nproc) --target ytb-player.nro
     chown -R '"$(id -u):$(id -g)"' /work/'"$BUILD_DIR"'
   '

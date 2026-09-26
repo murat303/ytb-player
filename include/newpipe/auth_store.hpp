@@ -14,6 +14,11 @@ struct AuthSession {
     std::string source_label;
     std::string source_path;
     std::string display_name;
+    // The YouTube channel requests act for, picked in Settings. A Google account can own several
+    // channels; without a page id YouTube answers for the one the browser last switched to.
+    std::string page_id;
+    std::string channel_name;
+    std::string photo_url;  // the picked channel's picture, for the page header
 
     bool authenticated() const { return !cookie_header.empty() && !sapisid.empty(); }
 };
@@ -39,6 +44,12 @@ public:
         const std::string& file_path = {},
         std::string* error_message = nullptr);
     bool clear(std::string* error_message = nullptr);
+    // Acts for this channel from now on (empty page_id: the session's own choice).
+    bool set_identity(
+        const std::string& page_id,
+        const std::string& channel_name,
+        const std::string& photo_url,
+        std::string* error_message = nullptr);
 
     std::vector<HttpHeader> build_youtube_headers(
         const std::string& origin,

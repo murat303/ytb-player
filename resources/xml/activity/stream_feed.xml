@@ -1,3 +1,9 @@
+<!-- A list of videos. For a channel it is the channel's page as on YouTube: the banner, the round
+     picture beside the name, "@handle • subscribers • videos" and the description's start, then
+     the tabs (Videos, Shorts, Live, Playlists) as chips and the grid. A playlist has its panel
+     on the left and its videos as rows; related videos show their title. The list scrolls with
+     its header; the chips sit inside the scrolled content so that up from the first row of
+     cards reaches them. -->
 <brls:AppletFrame
     headerHidden="true"
     footerHidden="false">
@@ -5,27 +11,92 @@
         width="100%"
         height="100%"
         axis="column"
-        paddingTop="20"
-        paddingLeft="20"
-        paddingRight="20">
+        paddingTop="16"
+        paddingLeft="28"
+        paddingRight="28">
 
-        <brls:Label
-            id="feed/status"
+        <!-- Something focusable while the list loads; it steps aside once cards are there. -->
+        <brls:Box
+            id="feed/holder"
+            width="auto"
+            height="1"
+            focusable="true"
+            hideHighlight="true" />
+
+        <brls:Box
             width="auto"
             height="auto"
-            text="피드"
-            fontSize="24"
-            textColor="#FFFFFF"
-            marginBottom="6" />
+            grow="1.0"
+            axis="row">
 
-        <brls:Label
-            id="feed/subtitle"
-            width="auto"
+        <!-- A playlist, as YouTube's tablet app shows one: its cover, name, owner, counts and
+             "Play all" in a panel on the left, the videos as rows on the right. -->
+        <brls:Box
+            id="feed/playlist"
+            width="380"
             height="auto"
-            text="A 재생 · Y 상세"
-            fontSize="16"
-            textColor="#D0D0D0"
-            marginBottom="12" />
+            axis="column"
+            marginRight="24"
+            marginBottom="16"
+            paddingTop="16"
+            paddingBottom="16"
+            paddingLeft="16"
+            paddingRight="16"
+            cornerRadius="18"
+            backgroundColor="#1F1F1F"
+            visibility="gone">
+
+            <brls:Image
+                id="feed/playlist_cover"
+                width="auto"
+                height="196"
+                scalingType="fill"
+                cornerRadius="12"
+                backgroundColor="#272727" />
+
+            <brls:Label
+                id="feed/playlist_title"
+                width="auto"
+                height="auto"
+                fontSize="24"
+                lineHeight="1.2"
+                textColor="#FFFFFF"
+                marginTop="14" />
+
+            <brls:Label
+                id="feed/playlist_owner"
+                width="auto"
+                height="auto"
+                fontSize="15"
+                singleLine="true"
+                textColor="#F1F1F1"
+                marginTop="10" />
+
+            <brls:Label
+                id="feed/playlist_meta"
+                width="auto"
+                height="auto"
+                fontSize="13"
+                singleLine="true"
+                textColor="#AAAAAA"
+                marginTop="4" />
+
+            <brls:Box
+                id="feed/playlist_actions"
+                width="auto"
+                height="auto"
+                axis="row"
+                marginTop="16" />
+
+            <brls:Label
+                id="feed/playlist_description"
+                width="auto"
+                height="auto"
+                fontSize="13"
+                lineHeight="1.35"
+                textColor="#AAAAAA"
+                marginTop="14" />
+        </brls:Box>
 
         <brls:ScrollingFrame
             id="feed/scroll"
@@ -33,11 +104,113 @@
             grow="1.0">
 
             <brls:Box
-                id="feed/grid"
                 width="auto"
                 height="auto"
-                axis="column" />
+                axis="column">
+
+                <brls:Box
+                    id="feed/channel"
+                    width="auto"
+                    height="auto"
+                    axis="column"
+                    marginBottom="14"
+                    visibility="gone">
+
+                    <brls:Image
+                        id="feed/banner"
+                        width="auto"
+                        height="160"
+                        scalingType="fill"
+                        cornerRadius="14"
+                        backgroundColor="#1F1F1F" />
+
+                    <brls:Box
+                        width="auto"
+                        height="auto"
+                        axis="row"
+                        alignItems="center"
+                        marginTop="16">
+
+                        <brls:Image
+                            id="feed/avatar"
+                            width="88"
+                            height="88"
+                            scalingType="fill"
+                            cornerRadius="44"
+                            backgroundColor="#272727" />
+
+                        <brls:Box
+                            width="1000"
+                            height="auto"
+                            axis="column"
+                            marginLeft="20">
+
+                            <brls:Label
+                                id="feed/channel_name"
+                                width="auto"
+                                height="auto"
+                                fontSize="28"
+                                singleLine="true"
+                                textColor="#FFFFFF" />
+
+                            <brls:Label
+                                id="feed/channel_meta"
+                                width="auto"
+                                height="auto"
+                                fontSize="15"
+                                singleLine="true"
+                                textColor="#AAAAAA"
+                                marginTop="6" />
+
+                            <brls:Label
+                                id="feed/channel_description"
+                                width="auto"
+                                height="auto"
+                                fontSize="14"
+                                lineHeight="1.35"
+                                textColor="#AAAAAA"
+                                marginTop="6" />
+                        </brls:Box>
+                    </brls:Box>
+                </brls:Box>
+
+                <!-- The list's name (related videos, a playlist); a channel shows its header. -->
+                <brls:Label
+                    id="feed/status"
+                    width="auto"
+                    height="auto"
+                    fontSize="26"
+                    singleLine="true"
+                    textColor="#FFFFFF"
+                    marginBottom="14" />
+
+                <brls:Box
+                    id="feed/tabs"
+                    width="auto"
+                    height="auto"
+                    axis="row"
+                    marginBottom="16"
+                    visibility="gone" />
+
+                <!-- "Loading", or why a tab shows nothing. -->
+                <brls:Label
+                    id="feed/message"
+                    width="auto"
+                    height="auto"
+                    fontSize="16"
+                    textColor="#AAAAAA"
+                    marginTop="12"
+                    marginBottom="12"
+                    visibility="gone" />
+
+                <brls:Box
+                    id="feed/grid"
+                    width="auto"
+                    height="auto"
+                    axis="column" />
+            </brls:Box>
 
         </brls:ScrollingFrame>
+        </brls:Box>
     </brls:Box>
 </brls:AppletFrame>

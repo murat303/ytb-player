@@ -1,13 +1,14 @@
 {
   "app": {
-    "title": "Switch-NewPipe",
+    "title": "YTB Player",
     "home": "Home",
     "search": "Search",
     "subscriptions": "Subscriptions",
     "library": "Library",
     "settings": "Settings",
-    "info_body": "Switch-NewPipe\nVersion: {}\n\nReal YouTube home, search, subscriptions, related feeds, channel navigation, and on-device playback are connected.\nYou can change playback quality, startup tab, default home category, short-video filtering, and language in Settings.",
-    "playback_failed": "Playback failed: {}"
+    "info_body": "YTB Player • Version {}\nDeveloper: muratgokce\n\nWatch YouTube on the Switch: Shorts, channels, playlists, comments, notifications, resume where you left off, autoplay, subtitles, sponsor skipping and loudness levelling.\n\nBased on Switch-NewPipe by mirusu400. Licensed under the GPLv3; comes with no warranty.",
+    "playback_failed": "Playback failed: {}",
+    "notifications": "Notifications"
   },
   "hints": {
     "ok": "OK",
@@ -21,7 +22,8 @@
     "delete": "Delete",
     "save": "Save",
     "input": "Please input...",
-    "submit": "Submit"
+    "submit": "Submit",
+    "tabs": "Tabs"
   },
   "common": {
     "close": "Close",
@@ -32,7 +34,6 @@
     "count_with_title": "{} • {} items"
   },
   "home": {
-    "category_action": "Category",
     "preparing": "Preparing home feed",
     "no_kiosk": "No kiosk available",
     "load_failed": "Unable to load home feed"
@@ -42,48 +43,60 @@
     "ime_title": "Enter search query",
     "ime_subtitle": "Video or channel",
     "prompt": "Press X to search",
+    "placeholder": "Search YouTube",
     "no_results": "No results for \"{}\"",
     "results_count": "\"{}\" • {} items"
   },
   "subscriptions": {
+    "filter": {
+      "all": "All",
+      "today": "Today",
+      "videos": "Videos",
+      "live": "Live",
+      "shorts": "Shorts",
+      "empty": "No videos match this filter"
+    },
     "session_action": "Session",
     "session_load_failed": "Session load failed",
-    "session_load_failed_body": "Delete the saved session file and import it again, or press RB to enter a new cookie.",
+    "session_load_failed_body": "Delete the saved session file and import it again, or press  to enter a new cookie.",
     "feed_load_failed": "Unable to load subscriptions feed",
-    "feed_load_failed_body": "A session is saved, but YouTube did not return the feed.\nTry re-importing the auth file with RB or using cookies from a different account.",
+    "feed_load_failed_body": "A session is saved, but YouTube did not return the feed.\nTry re-importing the auth file with  or using cookies from a different account.",
     "current_source": "Current source:\n{}",
     "session_prefix": "Session: {}",
-    "controls": "A Play • Y Info • X Refresh • RB Session",
+    "controls": " Play •  Info •  Refresh •  Filter •  Session",
     "signed_out_title": "Login session required",
-    "signed_out_body": "Press RB to open session management, then import an auth file or paste cookies directly.\n\nDefault import path:\n{}\n\nSupported formats:\nCookie header\nJSON {{\"cookie_header\":\"...\"}}\nNetscape cookies.txt",
+    "signed_out_body": "Sign in with your YouTube account to see your subscriptions: press  and choose \"Send over Wi-Fi\". On a computer on the same network you send your YouTube cookies from the page it shows.\n\nOr put a cookie file here and choose \"Load File\":\n{}",
     "session_dialog": {
       "saved": "A login session is already stored.\n\nSession source: {}",
-      "signed_out": "No login session is stored.\n\nDefault auth file path:\n{}",
+      "signed_out": "No login session is stored.\n\nSign in from your computer with \"Send over Wi-Fi\", or put a cookie file here:\n{}",
+      "wifi": "Send over Wi-Fi",
       "load_file": "Load File",
-      "input_cookie": "Paste Cookie",
-      "ime_title": "Paste cookie",
-      "ime_subtitle": "Cookie header or one-line JSON",
       "logout": "Log Out",
       "load_file_done": "Imported auth file",
       "load_file_failed": "Failed to import auth file",
       "logout_done": "Deleted login session",
-      "logout_failed": "Logout failed",
-      "empty_input": "Ignored empty input",
-      "save_cookie_done": "Saved cookie session",
-      "save_cookie_failed": "Failed to save cookie session"
+      "logout_failed": "Logout failed"
     }
   },
   "library": {
-    "section_action": "Section",
     "clear_action": "Clear",
+    "clear_history_confirm": "Clear your whole watch history?",
+    "clear_favorites_confirm": "Remove all of your favorites?",
     "favorites": "Favorites",
     "history": "History",
-    "favorites_empty": "RB clears this section, and LB switches to history.\nNo favorites have been saved yet.",
-    "history_empty": "Videos you play will appear here.\nLB switches to favorites, and RB clears this section.",
-    "controls": "A Play • Y Details • X Refresh • LB Switch Section • RB Clear",
+    "favorites_empty": "No favorites have been saved yet.\n and  switch between History, Favorites, Watch later and Liked videos.",
+    "history_empty": "Videos you play will appear here.\n and  switch between History, Favorites, Watch later and Liked videos.",
     "clear_failed": "Failed to clear library",
     "favorites_cleared": "Cleared favorites",
-    "history_cleared": "Cleared history"
+    "history_cleared": "Cleared history",
+    "watch_later": "Watch later",
+    "liked": "Liked videos",
+    "loading": "Loading from the YouTube account...",
+    "login_required": "This list comes from the YouTube account; sign in first (Settings > Sign-in session).",
+    "account_failed": "Could not load the list.",
+    "account_empty": "This list is empty.",
+    "cannot_clear_account": "YouTube lists cannot be cleared here",
+    "playlists": "Playlists"
   },
   "settings": {
     "reset_action": "Defaults",
@@ -96,7 +109,8 @@
       "options": {
         "auto": "System Default",
         "korean": "Korean",
-        "english": "English"
+        "english": "English",
+        "turkish": "Turkish"
       }
     },
     "playback_quality": {
@@ -123,7 +137,8 @@
         "recommended": "Recommended",
         "live": "Live",
         "music": "Music",
-        "gaming": "Gaming"
+        "gaming": "Gaming",
+        "shorts": "Shorts"
       }
     },
     "hide_shorts": {
@@ -132,6 +147,12 @@
       "enabled": "Short videos will be hidden",
       "disabled": "Short videos will be shown again"
     },
+    "hardware_decoding": {
+      "title": "Hardware decoding",
+      "save_failed": "Failed to save the decoding setting",
+      "enabled": "Videos will use the hardware decoder",
+      "disabled": "Videos will be decoded in software"
+    },
     "session": {
       "title": "Login session",
       "load_failed": "Failed to load session",
@@ -139,10 +160,19 @@
       "signed_out": "Not signed in",
       "dialog": {
         "load_failed": "Failed to load session\n\n{}",
-        "signed_out": "No saved login session.\n\nOpen the Subscriptions tab and press RB to import cookies.",
+        "signed_out": "No saved login session.\n\nOpen the Subscriptions tab and press  to import cookies.",
         "saved": "A login session is stored.\n\nDisplay name: {}\nSession file: {}",
         "source": "Source: {}"
       }
+    },
+    "account": {
+      "title": "YouTube account",
+      "default": "The session's channel",
+      "loading": "Getting the accounts from YouTube...",
+      "failed": "Could not get the account list",
+      "login_required": "Sign in first (Subscriptions > )",
+      "chosen": "YouTube account: {} (refresh the lists with X)",
+      "picker_title": "Act as which channel?"
     },
     "storage": {
       "title": "Storage paths",
@@ -150,7 +180,32 @@
       "dialog": {
         "body": "Settings file:\n{}\n\nLogin session:\n{}\n\nCookie import:\n{}\n\nLibrary:\n{}"
       }
-    }
+    },
+    "autoplay_next": {
+      "title": "Autoplay",
+      "save_failed": "Could not save the autoplay setting",
+      "enabled": "The next video starts when one ends",
+      "disabled": "The player waits when a video ends"
+    },
+    "skip_sponsors": {
+      "title": "Skip sponsor segments",
+      "save_failed": "Could not save the sponsor setting",
+      "enabled": "Sponsor segments will be skipped (SponsorBlock)",
+      "disabled": "Sponsor segments will play"
+    },
+    "subtitles": {
+      "title": "Show subtitles",
+      "save_failed": "Could not save the subtitle setting",
+      "enabled": "Subtitles will show (+ picks the language in the player)",
+      "disabled": "Subtitles are off"
+    },
+    "categories": {
+      "general": "General",
+      "video": "Video and captions",
+      "account": "Account",
+      "storage": "Storage"
+    },
+    "reset_confirm": "Reset all settings to their defaults?"
   },
   "detail": {
     "play_action": "Play",
@@ -164,9 +219,6 @@
     "status_play": "A Play",
     "status_channel": " • X Channel",
     "status_related": " • Y Related",
-    "status_more": " • LB More",
-    "status_comments": " • LB Comments",
-    "status_favorite": " • RB Favorite",
     "playback_url_failed": "Could not build playback URL",
     "channel_load_failed": "Unable to load channel videos",
     "related_load_failed": "Unable to load related videos",
@@ -177,10 +229,16 @@
     "comments_load_failed": "Unable to load comments",
     "favorite_save_failed": "Failed to save favorite",
     "favorite_added": "Added to favorites",
-    "favorite_removed": "Removed from favorites"
+    "favorite_removed": "Removed from favorites",
+    "loading": "Loading the description...",
+    "comments_none": "No comments, or comments are turned off"
   },
   "feed": {
-    "subtitle": "A Play • Y Details • B Back"
+    "subtitle": "A Play • Y Details • B Back",
+    "loading": "Loading...",
+    "tab_empty": "Nothing to show on this tab",
+    "tab_failed": "Couldn't load this tab",
+    "play_all": "Play all"
   },
   "comments": {
     "title": "Comments",
@@ -188,62 +246,161 @@
     "verified": "Verified",
     "unknown_author": "Unknown user",
     "likes": "Likes {}",
-    "replies": "Replies {}"
+    "replies": "Replies {}",
+    "loading": "Loading comments...",
+    "count_more": "{} comments • more load as you scroll down",
+    "count_loading": "{} comments • loading more...",
+    "count_failed": "{} comments • could not load more, scrolling down retries",
+    "count_all": "All {} comments loaded",
+    "count_limit": "Showing {} comments (the maximum)",
+    "replies_title": "Replies",
+    "reply_count_more": "{} replies • more load as you scroll down",
+    "reply_count_loading": "{} replies • loading more...",
+    "reply_count_failed": "{} replies • could not load more, scrolling down retries",
+    "reply_count_all": "All {} replies loaded",
+    "reply_count_limit": "Showing {} replies (the maximum)"
   },
   "player": {
     "status": {
-      "paused": "PAUSED",
+      "paused": "Paused",
       "live": "LIVE",
-      "playing": "PLAYING",
+      "playing": "Playing",
       "volume": "VOL"
     },
-    "osd_controls": "A PAUSE  B BACK  XY OSD  UPDN VOL  PAD 10S  LBRB 60S",
+    "osd_controls": "A Pause  B Back  X Info  Y Speed  D-pad 10 s  L/R 60 s  - Restart  + Settings",
     "osd": {
-      "auto": "OSD AUTO",
-      "locked": "OSD LOCKED",
-      "audio_download_failed": "AUDIO DOWNLOAD FAILED",
-      "audio_attach_failed": "AUDIO ATTACH FAILED",
-      "playback_ready": "PLAYBACK READY",
-      "volume": "VOLUME {}",
-      "seek": "SEEK {} / {}",
-      "seek_unavailable": "SEEK UNAVAILABLE",
-      "seek_live": "LIVE STREAM NO SEEK",
-      "seek_buffer_limit": "BUFFERED TO {}"
+      "auto": "Info bar: hides by itself",
+      "locked": "Info bar: always on",
+      "audio_download_failed": "Audio download failed",
+      "audio_attach_failed": "Couldn't add the audio",
+      "playback_ready": "Ready to play",
+      "volume": "Volume {}",
+      "seek": "Seek {} / {}",
+      "seek_unavailable": "Can't seek here",
+      "seek_live": "No seeking in a live stream",
+      "seek_buffer_limit": "Buffered up to {}",
+      "speed": "Speed {}x",
+      "resumed": "Resumed at {}   Restart: (-)",
+      "sponsor_skipped": "Skipped a sponsor segment ({} s)"
     },
     "loading": {
-      "preparing_playback": "PREPARING PLAYBACK",
-      "opening_media_stream": "OPENING MEDIA STREAM",
-      "waiting_for_mpv_load": "WAITING FOR MPV LOAD",
-      "opening_direct_media": "OPENING DIRECT MEDIA",
-      "non_youtube_url": "NON-YOUTUBE URL",
-      "direct_stream_ready": "DIRECT STREAM READY",
-      "opening_live_stream": "OPENING LIVE STREAM",
-      "direct_playback": "DIRECT PLAYBACK",
-      "direct_dash_playback": "DIRECT DASH PLAYBACK",
-      "downloading_video_data": "DOWNLOADING VIDEO DATA",
-      "received": "RECEIVED",
-      "starting_transfer": "STARTING TRANSFER",
-      "initial_buffer_ready": "INITIAL BUFFER READY",
-      "download_complete": "DOWNLOAD COMPLETE",
-      "attaching_audio_track": "ATTACHING AUDIO TRACK",
-      "stream_720_failed": "PRIMARY STREAM FAILED",
-      "fallback_safe_stream": "FALLING BACK TO SAFE STREAM",
-      "playback_started": "PLAYBACK STARTED",
-      "video_frame_ready": "VIDEO FRAME READY",
-      "reading_stream_buffer": "READING STREAM BUFFER",
-      "contacting_video_cdn": "CONTACTING VIDEO CDN",
-      "buffering_first_frame": "BUFFERING FIRST FRAME",
-      "following_playlist_redirect": "FOLLOWING PLAYLIST REDIRECT",
-      "resolving_youtube_stream": "RESOLVING YOUTUBE STREAM",
-      "contacting_player_api": "CONTACTING PLAYER API",
-      "selecting_playable_format": "SELECTING PLAYABLE FORMAT",
-      "requesting_hls_stream": "REQUESTING HLS STREAM",
-      "requesting_avc_stream": "REQUESTING AVC STREAM",
-      "requesting_progressive_stream": "REQUESTING PROGRESSIVE STREAM",
-      "requesting_ump_stream": "REQUESTING UMP STREAM"
+      "preparing_playback": "Preparing the video",
+      "opening_media_stream": "Opening the stream",
+      "waiting_for_mpv_load": "Loading the player",
+      "opening_direct_media": "Opening the media",
+      "non_youtube_url": "Not a YouTube address",
+      "direct_stream_ready": "Stream ready",
+      "opening_live_stream": "Opening the live stream",
+      "direct_playback": "Direct playback",
+      "direct_dash_playback": "Direct DASH playback",
+      "downloading_video_data": "Downloading the video",
+      "received": "received",
+      "starting_transfer": "Starting the transfer",
+      "initial_buffer_ready": "First part ready",
+      "download_complete": "Download complete",
+      "attaching_audio_track": "Adding the audio track",
+      "stream_720_failed": "Main stream failed",
+      "fallback_safe_stream": "Switching to a safer stream",
+      "playback_started": "Playback started",
+      "video_frame_ready": "Video frame ready",
+      "reading_stream_buffer": "Reading the stream",
+      "contacting_video_cdn": "Contacting the video server",
+      "buffering_first_frame": "Loading the first frame",
+      "following_playlist_redirect": "Following a playlist redirect",
+      "resolving_youtube_stream": "Getting the video",
+      "contacting_player_api": "Contacting YouTube",
+      "selecting_playable_format": "Choosing the quality",
+      "requesting_hls_stream": "Requesting the HLS stream",
+      "requesting_avc_stream": "Requesting the AVC stream",
+      "requesting_progressive_stream": "Requesting the progressive stream",
+      "requesting_ump_stream": "Requesting the UMP stream"
+    },
+    "autoplay": {
+      "countdown": "Next video in {} s",
+      "hint": "A Play now   B Cancel",
+      "cancelled": "Autoplay cancelled"
+    },
+    "subtitles": {
+      "loading": "Loading subtitles...",
+      "off": "Subtitles off",
+      "none": "This video has no subtitles",
+      "on": "Subtitles on: {}",
+      "other": "No subtitles in the chosen language, showing {1}",
+      "menu_title": "Subtitles",
+      "menu_off": "Off",
+      "auto_track": "{} (auto-generated)"
+    },
+    "menu": {
+      "hint": "A Select   B Close"
+    },
+    "chapters": {
+      "menu_title": "Chapters",
+      "current": "Chapter {}/{}: {}",
+      "hint": "ZR Chapters",
+      "none": "This video has no chapters",
+      "loading": "Loading chapters...",
+      "jumped": "Chapter: {}"
+    },
+    "shorts": {
+      "hint": "▲▼ Previous / next Short",
+      "next_loading": "Loading the next Short"
+    },
+    "settings": {
+      "title": "Settings",
+      "quality": "Quality",
+      "speed": "Playback speed",
+      "normal": "Normal",
+      "loop": "Loop video",
+      "on": "On",
+      "off": "Off",
+      "subtitles": "Captions",
+      "chapters": "Chapters",
+      "none": "None",
+      "quality_changed": "Quality: {} (resuming where you were)",
+      "loop_on": "Loop on",
+      "loop_off": "Loop off",
+      "button": "Settings",
+      "auto": "Auto"
     }
   },
   "stream": {
-    "live_badge": "LIVE"
+    "live_badge": "LIVE",
+    "playlist_view": "View full playlist",
+    "views": "views"
+  },
+  "notifications": {
+    "loading": "Loading notifications...",
+    "login_required": "Sign in with your YouTube account to see notifications (Settings > Account > Sign-in session).",
+    "empty": "No notifications"
+  },
+  "wifi_login": {
+    "title": "Sign in over Wi-Fi",
+    "instructions": "On a computer or phone on the same Wi-Fi, open a browser and go to:",
+    "explain": "Send your YouTube cookies from the page there and the Switch signs in by itself. The cookies go only to this Switch.",
+    "waiting": "Waiting…",
+    "done": "Signed in",
+    "no_network": "No network. Connect the Switch to Wi-Fi and try again.",
+    "failed": "Could not sign in",
+    "closed": "The screen on the Switch was closed",
+    "page": {
+      "title": "YTB Player: sign in",
+      "heading": "Sign in to YouTube on your Switch",
+      "intro": "On this computer:",
+      "step1": "Install the cookie export extension \"Get cookies.txt LOCALLY\". It is open source and sends the cookies nowhere.%links%",
+      "step2": "Open a private (incognito) window and sign in to YouTube. In Chrome and Edge, first turn on \"Allow in Incognito\" in the extension's details.",
+      "step3": "In the same tab, go to `youtube.com/robots.txt`.",
+      "step4": "Click the extension's icon, download `cookies.txt` with \"Export\", then close the private window. While it stays closed YouTube does not renew these cookies, so the Switch stays signed in for long.",
+      "step5": "Drop the downloaded file below or choose it, then press Send.",
+      "choose": "Choose cookies.txt",
+      "drop": "or drag and drop it here",
+      "chosen": "Chosen:",
+      "paste": "Paste the text instead",
+      "placeholder": "Cookies: cookies.txt, a Cookie header or JSON",
+      "send": "Send",
+      "saved_title": "Signed in",
+      "saved": "You can go back to your Switch and close this page.",
+      "empty": "Nothing to send: choose cookies.txt or paste the text.",
+      "privacy": "This page comes straight from your Switch, not from the internet; the cookies go only to it."
+    }
   }
 }

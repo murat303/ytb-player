@@ -350,6 +350,11 @@ float Box::getPaddingRight()
 
 View* Box::getDefaultFocus()
 {
+    // switch-newpipe: nothing inside a hidden box takes the focus (the settings keep the groups
+    // they do not show as GONE boxes; their cells were reached, unseen).
+    if (this->getVisibility() != Visibility::VISIBLE)
+        return nullptr;
+
     // Focus ourself first
     if (this->isFocusable())
         return this;

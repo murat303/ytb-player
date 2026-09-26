@@ -1,0 +1,406 @@
+{
+  "app": {
+    "title": "YTB Player",
+    "home": "Ana Sayfa",
+    "search": "Ara",
+    "subscriptions": "Abonelikler",
+    "library": "Kitaplık",
+    "settings": "Ayarlar",
+    "info_body": "YTB Player • Sürüm {}\nGeliştirici: muratgokce\n\nYouTube'u Switch'te izlemek için: Shorts, kanallar, listeler, yorumlar, bildirimler, kaldığın yerden devam, otomatik sonraki video, altyazı, sponsor atlama ve ses dengeleme.\n\nmirusu400'ün Switch-NewPipe uygulaması tabanlıdır. GPLv3 ile lisanslıdır; hiçbir garanti verilmez.",
+    "playback_failed": "Oynatılamadı: {}",
+    "notifications": "Bildirimler"
+  },
+  "hints": {
+    "ok": "Tamam",
+    "cancel": "İptal",
+    "back": "Geri",
+    "exit": "Çıkış",
+    "exit_hint": "Uygulamadan çıkacaksın",
+    "open": "Aç",
+    "on": "Açık",
+    "off": "Kapalı",
+    "delete": "Sil",
+    "save": "Kaydet",
+    "input": "Buraya yaz...",
+    "submit": "Gönder",
+    "tabs": "Sekme"
+  },
+  "common": {
+    "close": "Kapat",
+    "info": "Bilgi",
+    "none": "Yok",
+    "refresh": "Yenile",
+    "service_init_failed": "Servis başlatılamadı: {}",
+    "count_with_title": "{} • {} video"
+  },
+  "home": {
+    "preparing": "Ana sayfa hazırlanıyor",
+    "no_kiosk": "Kullanılabilir kategori yok",
+    "load_failed": "Ana sayfa yüklenemedi"
+  },
+  "search": {
+    "action": "Ara",
+    "ime_title": "Aranacak kelimeyi yaz",
+    "ime_subtitle": "Video ya da kanal",
+    "prompt": "Aramak için X'e bas",
+    "placeholder": "YouTube'da ara",
+    "no_results": "\"{}\" için sonuç yok",
+    "results_count": "\"{}\" • {} sonuç"
+  },
+  "subscriptions": {
+    "filter": {
+      "all": "Tümü",
+      "today": "Bugün",
+      "videos": "Videolar",
+      "live": "Canlı",
+      "shorts": "Shorts",
+      "empty": "Bu süzgece uyan video yok"
+    },
+    "session_action": "Oturum",
+    "session_load_failed": "Oturum yüklenemedi",
+    "session_load_failed_body": "Kayıtlı oturum dosyasını silip yeniden içe aktar ya da yeni bir çerez girmek için  tuşuna bas.",
+    "feed_load_failed": "Abonelik akışı yüklenemedi",
+    "feed_load_failed_body": "Oturum kayıtlı ama YouTube akışı göndermedi.\nGiriş dosyasını  tuşuyla yeniden içe aktarmayı ya da başka bir hesabın çerezlerini denemeyi dene.",
+    "current_source": "Geçerli kaynak:\n{}",
+    "session_prefix": "Oturum: {}",
+    "controls": " Oynat •  Bilgi •  Yenile •  Süzgeç •  Oturum",
+    "signed_out_title": "Giriş yapman gerekiyor",
+    "signed_out_body": "Aboneliklerini görmek için YouTube hesabınla giriş yap:  tuşuna bas ve \"Wi-Fi ile gönder\"i seç. Aynı ağdaki bir bilgisayarda açacağın sayfadan YouTube çerezlerini gönderirsin.\n\nYa da çerez dosyasını şuraya koyup \"Dosyadan Yükle\"yi seç:\n{}",
+    "session_dialog": {
+      "saved": "Kayıtlı bir giriş oturumu var.\n\nOturum kaynağı: {}",
+      "signed_out": "Kayıtlı giriş oturumu yok.\n\n\"Wi-Fi ile gönder\" ile bilgisayarından giriş yapabilir ya da çerez dosyasını şuraya koyabilirsin:\n{}",
+      "wifi": "Wi-Fi ile gönder",
+      "load_file": "Dosyadan Yükle",
+      "logout": "Çıkış Yap",
+      "load_file_done": "Giriş dosyası içe aktarıldı",
+      "load_file_failed": "Giriş dosyası içe aktarılamadı",
+      "logout_done": "Giriş oturumu silindi",
+      "logout_failed": "Çıkış yapılamadı"
+    }
+  },
+  "library": {
+    "clear_action": "Temizle",
+    "clear_history_confirm": "İzleme geçmişinin tamamı silinsin mi?",
+    "clear_favorites_confirm": "Favorilerin tamamı silinsin mi?",
+    "favorites": "Favoriler",
+    "history": "Geçmiş",
+    "favorites_empty": "Henüz favori eklenmedi.\n ve  ile Geçmiş, Favoriler, Daha sonra izle ve Beğenilenler arasında geçilir.",
+    "history_empty": "İzlediğin videolar burada görünür.\n ve  ile Geçmiş, Favoriler, Daha sonra izle ve Beğenilenler arasında geçilir.",
+    "clear_failed": "Kitaplık temizlenemedi",
+    "favorites_cleared": "Favoriler temizlendi",
+    "history_cleared": "Geçmiş temizlendi",
+    "watch_later": "Daha sonra izle",
+    "liked": "Beğenilen videolar",
+    "loading": "YouTube hesabından yükleniyor...",
+    "login_required": "Bu liste YouTube hesabından gelir; önce giriş yapmalısın (Ayarlar > Giriş oturumu).",
+    "account_failed": "Liste yüklenemedi.",
+    "account_empty": "Bu liste boş.",
+    "cannot_clear_account": "YouTube listeleri buradan temizlenemez",
+    "playlists": "Oynatma listeleri"
+  },
+  "settings": {
+    "reset_action": "Varsayılanlar",
+    "reset_failed": "Ayarlar sıfırlanamadı",
+    "reset_done": "Varsayılan ayarlara dönüldü",
+    "language": {
+      "title": "Dil",
+      "save_failed": "Dil kaydedilemedi",
+      "saved": "Dil kaydedildi. Her yerde geçerli olması için uygulamayı yeniden başlat.",
+      "options": {
+        "auto": "Sistem Varsayılanı",
+        "korean": "Korece",
+        "english": "İngilizce",
+        "turkish": "Türkçe"
+      }
+    },
+    "playback_quality": {
+      "title": "Oynatma kalitesi",
+      "save_failed": "Oynatma kalitesi kaydedilemedi",
+      "saved": "Oynatma kalitesi kaydedildi",
+      "options": {
+        "best": "En iyi (TV'de 1080p / elde 720p)",
+        "hd_1080": "1080p",
+        "hd_720": "720p",
+        "low_320": "320p"
+      }
+    },
+    "startup_tab": {
+      "title": "Açılış sekmesi",
+      "save_failed": "Açılış sekmesi kaydedilemedi",
+      "saved": "Açılış sekmesi bir sonraki açılışta değişecek"
+    },
+    "home_kiosk": {
+      "title": "Varsayılan ana sayfa kategorisi",
+      "save_failed": "Ana sayfa kategorisi kaydedilemedi",
+      "saved": "Ana sayfa bir sonraki yenilemede değişecek",
+      "options": {
+        "recommended": "Önerilenler",
+        "live": "Canlı",
+        "music": "Müzik",
+        "gaming": "Oyun",
+        "shorts": "Shorts"
+      }
+    },
+    "hide_shorts": {
+      "title": "Kısa videoları gizle",
+      "save_failed": "Kısa video ayarı kaydedilemedi",
+      "enabled": "Kısa videolar gizlenecek",
+      "disabled": "Kısa videolar yeniden gösterilecek"
+    },
+    "hardware_decoding": {
+      "title": "Donanım çözme",
+      "save_failed": "Çözme ayarı kaydedilemedi",
+      "enabled": "Videolar donanım çözücüyle oynatılacak",
+      "disabled": "Videolar yazılımla çözülecek"
+    },
+    "session": {
+      "title": "Giriş oturumu",
+      "load_failed": "Oturum yüklenemedi",
+      "saved": "Kayıtlı",
+      "signed_out": "Giriş yapılmadı",
+      "dialog": {
+        "load_failed": "Oturum yüklenemedi\n\n{}",
+        "signed_out": "Kayıtlı giriş oturumu yok.\n\nÇerezleri içe aktarmak için Abonelikler sekmesini açıp  tuşuna bas.",
+        "saved": "Kayıtlı bir giriş oturumu var.\n\nGörünen ad: {}\nOturum dosyası: {}",
+        "source": "Kaynak: {}"
+      }
+    },
+    "account": {
+      "title": "YouTube hesabı",
+      "default": "Oturumun seçili kanalı",
+      "loading": "Hesaplar YouTube'dan alınıyor...",
+      "failed": "Hesap listesi alınamadı",
+      "login_required": "Önce giriş yapmalısın (Abonelikler > )",
+      "chosen": "YouTube hesabı: {} (listeleri X ile yenile)",
+      "picker_title": "Hangi kanal adına?"
+    },
+    "storage": {
+      "title": "Dosya yolları",
+      "detail": "Ayar / oturum / kitaplık dosyaları",
+      "dialog": {
+        "body": "Ayar dosyası:\n{}\n\nGiriş oturumu:\n{}\n\nÇerez içe aktarma:\n{}\n\nKitaplık:\n{}"
+      }
+    },
+    "autoplay_next": {
+      "title": "Otomatik oynat",
+      "save_failed": "Otomatik oynatma ayarı kaydedilemedi",
+      "enabled": "Video bitince sıradaki video açılacak",
+      "disabled": "Video bitince oynatıcı bekleyecek"
+    },
+    "skip_sponsors": {
+      "title": "Sponsor bölümlerini atla",
+      "save_failed": "Sponsor ayarı kaydedilemedi",
+      "enabled": "Sponsor bölümleri atlanacak (SponsorBlock)",
+      "disabled": "Sponsor bölümleri atlanmayacak"
+    },
+    "subtitles": {
+      "title": "Altyazıları göster",
+      "save_failed": "Altyazı ayarı kaydedilemedi",
+      "enabled": "Altyazılar gösterilecek (oynatıcıda + ile dil seçilir)",
+      "disabled": "Altyazılar kapalı"
+    },
+    "categories": {
+      "general": "Genel",
+      "video": "Video ve altyazılar",
+      "account": "Hesap",
+      "storage": "Depolama"
+    },
+    "reset_confirm": "Bütün ayarlar varsayılana dönsün mü?"
+  },
+  "detail": {
+    "play_action": "Oynat",
+    "channel_action": "Kanal",
+    "related_action": "İlgili",
+    "more_action": "Diğer",
+    "favorite_action": "Favorilere ekle",
+    "unfavorite_action": "Favorilerden çıkar",
+    "default_title": "Video ayrıntıları",
+    "no_description": "Henüz açıklama yok.",
+    "status_play": "A Oynat",
+    "status_channel": " • X Kanal",
+    "status_related": " • Y İlgili",
+    "playback_url_failed": "Oynatma adresi oluşturulamadı",
+    "channel_load_failed": "Kanal videoları yüklenemedi",
+    "related_load_failed": "İlgili videolar yüklenemedi",
+    "extras_title": "Diğer işlemler",
+    "playlist_action": "Oynatma listesi",
+    "comments_action": "Yorumlar",
+    "playlist_load_failed": "Oynatma listesi yüklenemedi",
+    "comments_load_failed": "Yorumlar yüklenemedi",
+    "favorite_save_failed": "Favori kaydedilemedi",
+    "favorite_added": "Favorilere eklendi",
+    "favorite_removed": "Favorilerden çıkarıldı",
+    "loading": "Açıklama yükleniyor...",
+    "comments_none": "Yorum yok ya da yorumlar kapalı"
+  },
+  "feed": {
+    "subtitle": "A Oynat • Y Ayrıntılar • B Geri",
+    "loading": "Yükleniyor...",
+    "tab_empty": "Bu sekmede gösterilecek bir şey yok",
+    "tab_failed": "Sekme yüklenemedi",
+    "play_all": "Tümünü oynat"
+  },
+  "comments": {
+    "title": "Yorumlar",
+    "subtitle": "B Geri",
+    "verified": "Doğrulanmış",
+    "unknown_author": "Bilinmeyen kullanıcı",
+    "likes": "{} beğeni",
+    "replies": "{} yanıt",
+    "loading": "Yorumlar yükleniyor...",
+    "count_more": "{} yorum • aşağı indikçe devamı yüklenir",
+    "count_loading": "{} yorum • devamı yükleniyor...",
+    "count_failed": "{} yorum • devamı yüklenemedi, aşağı inince yeniden denenir",
+    "count_all": "{} yorumun hepsi yüklendi",
+    "count_limit": "{} yorum gösteriliyor (en fazla bu kadar)",
+    "replies_title": "Yanıtlar",
+    "reply_count_more": "{} yanıt • aşağı indikçe devamı yüklenir",
+    "reply_count_loading": "{} yanıt • devamı yükleniyor...",
+    "reply_count_failed": "{} yanıt • devamı yüklenemedi, aşağı inince yeniden denenir",
+    "reply_count_all": "{} yanıtın hepsi yüklendi",
+    "reply_count_limit": "{} yanıt gösteriliyor (en fazla bu kadar)"
+  },
+  "player": {
+    "status": {
+      "paused": "Duraklatıldı",
+      "live": "Canlı",
+      "playing": "Oynatılıyor",
+      "volume": "Ses"
+    },
+    "osd_controls": "A Dur  B Geri  X Bilgi  Y Hız  Yön 10 sn  L/R 60 sn  - Başa  + Ayarlar",
+    "osd": {
+      "auto": "Bilgi çubuğu: kendiliğinden gizlenir",
+      "locked": "Bilgi çubuğu: sürekli açık",
+      "audio_download_failed": "Ses indirilemedi",
+      "audio_attach_failed": "Ses eklenemedi",
+      "playback_ready": "Oynatma hazır",
+      "volume": "Ses {}",
+      "seek": "Atla {} / {}",
+      "seek_unavailable": "Burada ileri-geri atlanamıyor",
+      "seek_live": "Canlı yayında atlanamaz",
+      "seek_buffer_limit": "{} kadarı yüklendi",
+      "speed": "Hız {}x",
+      "resumed": "Kaldığın yerden: {}   Başa dönmek için (-)",
+      "sponsor_skipped": "Sponsor bölümü atlandı ({} sn)"
+    },
+    "loading": {
+      "preparing_playback": "Video hazırlanıyor",
+      "opening_media_stream": "Medya akışı açılıyor",
+      "waiting_for_mpv_load": "Oynatıcı yükleniyor",
+      "opening_direct_media": "Doğrudan medya açılıyor",
+      "non_youtube_url": "YouTube dışı adres",
+      "direct_stream_ready": "Doğrudan akış hazır",
+      "opening_live_stream": "Canlı yayın açılıyor",
+      "direct_playback": "Doğrudan oynatma",
+      "direct_dash_playback": "Doğrudan DASH oynatma",
+      "downloading_video_data": "Video verisi indiriliyor",
+      "received": "alındı",
+      "starting_transfer": "Aktarım başlıyor",
+      "initial_buffer_ready": "İlk arabellek hazır",
+      "download_complete": "İndirme tamamlandı",
+      "attaching_audio_track": "Ses izi ekleniyor",
+      "stream_720_failed": "Ana akış açılamadı",
+      "fallback_safe_stream": "Güvenli akışa geçiliyor",
+      "playback_started": "Oynatma başladı",
+      "video_frame_ready": "Video karesi hazır",
+      "reading_stream_buffer": "Akış arabelleği okunuyor",
+      "contacting_video_cdn": "Video sunucusuna bağlanılıyor",
+      "buffering_first_frame": "İlk kare yükleniyor",
+      "following_playlist_redirect": "Liste yönlendirmesi izleniyor",
+      "resolving_youtube_stream": "Video bilgileri alınıyor",
+      "contacting_player_api": "YouTube'a bağlanılıyor",
+      "selecting_playable_format": "Görüntü kalitesi seçiliyor",
+      "requesting_hls_stream": "HLS akışı isteniyor",
+      "requesting_avc_stream": "AVC akışı isteniyor",
+      "requesting_progressive_stream": "Progresif akış isteniyor",
+      "requesting_ump_stream": "UMP akışı isteniyor"
+    },
+    "autoplay": {
+      "countdown": "Sıradaki video {} sn sonra",
+      "hint": "A Şimdi oynat   B İptal",
+      "cancelled": "Otomatik oynatma iptal edildi"
+    },
+    "subtitles": {
+      "loading": "Altyazı yükleniyor...",
+      "off": "Altyazı kapalı",
+      "none": "Bu videoda altyazı yok",
+      "on": "Altyazı açık: {}",
+      "other": "{} altyazı yok, {} altyazı gösteriliyor",
+      "menu_title": "Altyazı",
+      "menu_off": "Kapalı",
+      "auto_track": "{} (otomatik)"
+    },
+    "menu": {
+      "hint": "A Seç   B Kapat"
+    },
+    "chapters": {
+      "menu_title": "Bölümler",
+      "current": "Bölüm {}/{}: {}",
+      "hint": "ZR Bölümler",
+      "none": "Bu videoda bölüm yok",
+      "loading": "Bölümler yükleniyor...",
+      "jumped": "Bölüm: {}"
+    },
+    "shorts": {
+      "hint": "▲▼ Önceki / sonraki Shorts",
+      "next_loading": "Sonraki Shorts yükleniyor"
+    },
+    "settings": {
+      "title": "Ayarlar",
+      "quality": "Kalite",
+      "speed": "Oynatma hızı",
+      "normal": "Normal",
+      "loop": "Videoyu döngüye al",
+      "on": "Açık",
+      "off": "Kapalı",
+      "subtitles": "Altyazı",
+      "chapters": "Bölümler",
+      "none": "Yok",
+      "quality_changed": "Kalite: {} (kaldığın yerden açılıyor)",
+      "loop_on": "Döngü açık",
+      "loop_off": "Döngü kapalı",
+      "button": "Ayarlar",
+      "auto": "Otomatik"
+    }
+  },
+  "stream": {
+    "live_badge": "CANLI",
+    "playlist_view": "Oynatma listesinin tamamını görüntüleyin",
+    "views": "görüntüleme"
+  },
+  "notifications": {
+    "loading": "Bildirimler yükleniyor...",
+    "login_required": "Bildirimleri görmek için YouTube hesabınla giriş yap (Ayarlar > Hesap > Giriş oturumu).",
+    "empty": "Bildirim yok"
+  },
+  "wifi_login": {
+    "title": "Wi-Fi ile giriş",
+    "instructions": "Aynı Wi-Fi ağındaki bir bilgisayarda ya da telefonda tarayıcıyı aç ve şu adrese git:",
+    "explain": "Oradaki sayfadan YouTube çerezlerini gönderdiğinde Switch girişi kendisi yapar. Çerezler yalnızca bu Switch'e gider.",
+    "waiting": "Bekleniyor…",
+    "done": "Giriş yapıldı",
+    "no_network": "Ağ bağlantısı yok. Switch'i Wi-Fi'a bağlayıp yeniden dene.",
+    "failed": "Giriş yapılamadı",
+    "closed": "Switch'teki ekran kapatıldı",
+    "page": {
+      "title": "YTB Player: giriş",
+      "heading": "Switch'te YouTube hesabınla giriş yap",
+      "intro": "Bu bilgisayarda şu adımları izle:",
+      "step1": "Çerezleri dışa aktaran \"Get cookies.txt LOCALLY\" eklentisini kur. Açık kaynaklıdır, çerezleri hiçbir yere göndermez.%links%",
+      "step2": "Gizli (özel) bir pencere aç ve YouTube'a giriş yap. Chrome ve Edge'de önce eklentinin ayrıntılarından \"Gizli modda izin ver\"i aç.",
+      "step3": "Aynı sekmede `youtube.com/robots.txt` adresine git.",
+      "step4": "Eklentinin simgesine tıkla, \"Export\" ile `cookies.txt` dosyasını indir, sonra gizli pencereyi kapat. Pencere kapalı kalınca YouTube bu çerezleri yenilemez; Switch'teki oturum uzun süre açık kalır.",
+      "step5": "İndirilen dosyayı aşağıya bırak ya da seç, sonra Gönder'e bas.",
+      "choose": "cookies.txt dosyasını seç",
+      "drop": "ya da buraya sürükleyip bırak",
+      "chosen": "Seçildi:",
+      "paste": "Dosya yerine metni yapıştır",
+      "placeholder": "Çerezler: cookies.txt, Cookie başlığı ya da JSON",
+      "send": "Gönder",
+      "saved_title": "Giriş yapıldı",
+      "saved": "Switch'e dönebilirsin; bu sayfayı kapatabilirsin.",
+      "empty": "Gönderilecek bir şey yok: cookies.txt dosyasını seç ya da metni yapıştır.",
+      "privacy": "Bu sayfa internetten değil, doğrudan Switch'inden geliyor; çerezler yalnızca ona gider."
+    }
+  }
+}

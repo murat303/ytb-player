@@ -1502,6 +1502,7 @@ static FONSglyph* fons__getGlyph(FONScontext* stash, FONSfont* font, unsigned in
 
 	// Create a new glyph or rasterize bitmap data for a cached glyph.
 	g = fons__tt_getGlyphIndex(&font->font, codepoint);
+	int missing = 0;
 	// Try to find the glyph in fallback fonts.
 	if (g == 0) {
 		for (i = 0; i < font->nfallbacks; ++i) {
@@ -1515,9 +1516,17 @@ static FONSglyph* fons__getGlyph(FONScontext* stash, FONSfont* font, unsigned in
 		}
 		// It is possible that we did not find a fallback glyph.
 		// In that case the glyph index 'g' is 0, and we'll proceed below and cache empty glyph.
+		// switch-newpipe: a printable character no font has (emoji in video titles) becomes an
+		// empty glyph without advance instead of the ".notdef" box. (A NULL glyph would read as
+		// a full atlas to nvgText, which then stops drawing the rest of the text.)
+		missing = g == 0 && codepoint >= 0x20;
 	}
 	scale = fons__tt_getPixelHeightScale(&renderFont->font, size);
 	fons__tt_buildGlyphBitmap(&renderFont->font, g, size, scale, &advance, &lsb, &x0, &y0, &x1, &y1);
+	if (missing) {
+		advance = 0;
+		x0 = y0 = x1 = y1 = 0;
+	}
 	gw = x1-x0 + pad*2;
 	gh = y1-y0 + pad*2;
 

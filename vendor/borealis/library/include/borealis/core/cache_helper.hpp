@@ -292,6 +292,9 @@ class TextureCache : public Singleton<TextureCache>
         {
             nvgDeleteImage(vg, i.value);
         }
+        // Forget the deleted textures too: after a UI restart (Switch-NewPipe restarts it around
+        // the player) the new context reuses those ids, and cached icons drew other images.
+        cache = LRUCache<std::string, size_t>(200, 0);
     }
 
     void debug() { cache.debug(); }

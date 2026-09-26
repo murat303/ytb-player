@@ -1,60 +1,279 @@
+<!-- A video's page as YouTube's tablet app lays it out: on the left the big picture (a tap plays
+     it), the title, views and date, the actions, the channel, a box with the comment count and
+     the first comment, the description; on the right the related videos, one under another.
+     Both columns scroll on their own. -->
 <brls:AppletFrame
     headerHidden="true"
     footerHidden="false">
     <brls:Box
         width="100%"
         height="100%"
-        axis="column"
-        paddingTop="20"
-        paddingLeft="20"
-        paddingRight="20">
-
-        <brls:Label
-            id="detail/title"
-            width="auto"
-            height="auto"
-            text="영상 정보"
-            fontSize="24"
-            textColor="#FFFFFF"
-            marginBottom="8" />
-
-        <brls:Label
-            id="detail/meta"
-            width="auto"
-            height="auto"
-            text=""
-            fontSize="16"
-            textColor="#D0D0D0"
-            marginBottom="8" />
-
-        <brls:Label
-            id="detail/status"
-            width="auto"
-            height="auto"
-            text="A 재생 · X 채널 · Y 연관 · LB 더보기 · RB 즐겨찾기"
-            fontSize="16"
-            textColor="#B0B0B0"
-            marginBottom="10" />
-
-        <brls:ProgressSpinner
-            id="detail/spinner"
-            width="auto"
-            height="80"
-            visibility="gone" />
+        axis="row"
+        paddingTop="16"
+        paddingLeft="28"
+        paddingRight="16">
 
         <brls:ScrollingFrame
-            width="auto"
-            grow="1.0">
+            id="detail/scroll"
+            width="776"
+            height="auto">
 
-            <brls:Label
-                id="detail/body"
+            <brls:Box
                 width="auto"
                 height="auto"
-                lineHeight="1.55"
-                text=""
-                fontSize="18"
-                textColor="#F2F2F2" />
+                axis="column"
+                paddingBottom="16">
 
+                <brls:Box
+                    id="detail/picture"
+                    width="auto"
+                    height="436"
+                    axis="column">
+
+                    <brls:Image
+                        id="detail/thumbnail"
+                        width="auto"
+                        height="436"
+                        scalingType="fill"
+                        cornerRadius="14"
+                        backgroundColor="#1F1F1F" />
+
+                    <brls:Box
+                        width="76"
+                        height="76"
+                        positionType="absolute"
+                        positionLeft="350"
+                        positionTop="180"
+                        cornerRadius="38"
+                        backgroundColor="#000000AA"
+                        justifyContent="center"
+                        alignItems="center">
+
+                        <brls:Label
+                            width="auto"
+                            height="auto"
+                            text="▶"
+                            fontSize="34"
+                            textColor="#FFFFFF"
+                            marginLeft="6" />
+                    </brls:Box>
+
+                    <brls:Box
+                        id="detail/badge"
+                        width="auto"
+                        height="auto"
+                        positionType="absolute"
+                        positionRight="12"
+                        positionBottom="12"
+                        paddingLeft="6"
+                        paddingRight="6"
+                        paddingTop="2"
+                        paddingBottom="2"
+                        cornerRadius="4"
+                        backgroundColor="#000000CC"
+                        visibility="gone">
+
+                        <brls:Label
+                            id="detail/badge_text"
+                            width="auto"
+                            height="auto"
+                            fontSize="15"
+                            textColor="#FFFFFF" />
+                    </brls:Box>
+                </brls:Box>
+
+                <brls:Label
+                    id="detail/title"
+                    width="auto"
+                    height="auto"
+                    text="@i18n/detail/default_title"
+                    fontSize="22"
+                    lineHeight="1.25"
+                    textColor="#FFFFFF"
+                    marginTop="14" />
+
+                <brls:Label
+                    id="detail/meta"
+                    width="auto"
+                    height="auto"
+                    fontSize="14"
+                    singleLine="true"
+                    textColor="#AAAAAA"
+                    marginTop="4" />
+
+                <brls:Box
+                    id="detail/actions"
+                    width="auto"
+                    height="auto"
+                    axis="row"
+                    marginTop="14" />
+
+                <!-- The channel: its picture, name and subscribers; A or a tap opens its page. -->
+                <brls:Box
+                    id="detail/channel_row"
+                    width="auto"
+                    height="auto"
+                    axis="row"
+                    alignItems="center"
+                    marginTop="12"
+                    paddingTop="8"
+                    paddingBottom="8"
+                    paddingLeft="8"
+                    paddingRight="8"
+                    focusable="true"
+                    cornerRadius="12"
+                    highlightCornerRadius="12">
+
+                    <brls:Image
+                        id="detail/avatar"
+                        width="44"
+                        height="44"
+                        scalingType="fill"
+                        cornerRadius="22"
+                        backgroundColor="#3A3A3A" />
+
+                    <brls:Box
+                        width="600"
+                        height="auto"
+                        axis="column"
+                        marginLeft="12">
+
+                        <brls:Label
+                            id="detail/channel"
+                            width="auto"
+                            height="auto"
+                            fontSize="17"
+                            singleLine="true"
+                            textColor="#FFFFFF" />
+
+                        <brls:Label
+                            id="detail/subscribers"
+                            width="auto"
+                            height="auto"
+                            fontSize="13"
+                            singleLine="true"
+                            textColor="#AAAAAA"
+                            marginTop="3" />
+                    </brls:Box>
+                </brls:Box>
+
+                <!-- "Comments 1.2K" and the first comment; A or a tap opens them all. -->
+                <brls:Box
+                    id="detail/comments"
+                    width="auto"
+                    height="auto"
+                    axis="column"
+                    marginTop="10"
+                    paddingTop="12"
+                    paddingBottom="14"
+                    paddingLeft="16"
+                    paddingRight="16"
+                    focusable="true"
+                    cornerRadius="12"
+                    highlightCornerRadius="12"
+                    backgroundColor="#272727">
+
+                    <brls:Box
+                        width="auto"
+                        height="auto"
+                        axis="row"
+                        alignItems="center">
+
+                        <brls:Label
+                            width="auto"
+                            height="auto"
+                            text="@i18n/detail/comments_action"
+                            fontSize="16"
+                            textColor="#FFFFFF" />
+
+                        <brls:Label
+                            id="detail/comments_count"
+                            width="auto"
+                            height="auto"
+                            fontSize="14"
+                            singleLine="true"
+                            textColor="#AAAAAA"
+                            marginLeft="10" />
+                    </brls:Box>
+
+                    <brls:Box
+                        width="auto"
+                        height="auto"
+                        axis="row"
+                        alignItems="center"
+                        marginTop="10">
+
+                        <brls:Image
+                            id="detail/comment_avatar"
+                            width="28"
+                            height="28"
+                            scalingType="fill"
+                            cornerRadius="14"
+                            backgroundColor="#3A3A3A" />
+
+                        <brls:Label
+                            id="detail/comment_text"
+                            width="680"
+                            height="auto"
+                            fontSize="14"
+                            lineHeight="1.35"
+                            textColor="#F1F1F1"
+                            marginLeft="12" />
+                    </brls:Box>
+                </brls:Box>
+
+                <brls:Box
+                    width="auto"
+                    height="auto"
+                    axis="column"
+                    marginTop="12"
+                    paddingTop="14"
+                    paddingBottom="14"
+                    paddingLeft="16"
+                    paddingRight="16"
+                    cornerRadius="12"
+                    backgroundColor="#272727">
+
+                    <brls:Label
+                        id="detail/body"
+                        width="auto"
+                        height="auto"
+                        lineHeight="1.45"
+                        fontSize="14"
+                        textColor="#F1F1F1" />
+                </brls:Box>
+            </brls:Box>
+        </brls:ScrollingFrame>
+
+        <!-- The related videos. -->
+        <brls:ScrollingFrame
+            id="detail/related_scroll"
+            width="auto"
+            height="auto"
+            grow="1.0"
+            marginLeft="16">
+
+            <brls:Box
+                width="auto"
+                height="auto"
+                axis="column"
+                paddingBottom="16">
+
+                <brls:Label
+                    id="detail/related_message"
+                    width="auto"
+                    height="auto"
+                    fontSize="15"
+                    textColor="#AAAAAA"
+                    marginTop="8"
+                    marginLeft="8" />
+
+                <brls:Box
+                    id="detail/related"
+                    width="auto"
+                    height="auto"
+                    axis="column" />
+            </brls:Box>
         </brls:ScrollingFrame>
     </brls:Box>
 </brls:AppletFrame>

@@ -1,12 +1,14 @@
 HOST_BUILD_DIR := build/host
-HOST_BIN := $(HOST_BUILD_DIR)/switch_newpipe_host
+HOST_BIN := $(HOST_BUILD_DIR)/ytb_player_host
 HOST_CXX := g++
 HOST_CC := gcc
 HOST_CXXFLAGS := -std=c++17 -O2 -Wall -Wextra -Iinclude -Ivendor/third_party -Ivendor/quickjs
 HOST_LDLIBS := -lssl -lcrypto -pthread
 
 HOST_CXX_SRCS := \
+	src/common/app_paths.cpp \
 	src/common/auth_store.cpp \
+	src/common/content_locale.cpp \
 	src/common/log.cpp \
 	src/common/http_client.cpp \
 	src/common/settings_store.cpp \
@@ -14,6 +16,8 @@ HOST_CXX_SRCS := \
 	src/common/youtube_resolver.cpp \
 	src/common/throttling_decrypter.cpp \
 	src/common/ump.cpp \
+	src/common/sponsorblock.cpp \
+	src/common/subtitles.cpp \
 	src/host/main.cpp
 
 # QuickJS powers the throttling (n-parameter) transform. It is C, so it must be

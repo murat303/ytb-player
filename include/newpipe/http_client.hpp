@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <optional>
 #include <string>
 #include <vector>
@@ -27,6 +28,9 @@ public:
 
 class HttpsHttpClient final : public HttpClient {
 public:
+    // A request in flight gives up soon (within about a second) once *flag becomes true.
+    void set_abort_flag(const std::atomic<bool>* flag) { abort_flag_ = flag; }
+
     std::optional<std::string> get(
         const std::string& url,
         const std::vector<HttpHeader>& headers = {}) override;
@@ -35,6 +39,9 @@ public:
         const std::string& url,
         const std::string& body,
         const std::vector<HttpHeader>& headers = {}) override;
+
+private:
+    const std::atomic<bool>* abort_flag_ = nullptr;
 };
 
 }  // namespace newpipe

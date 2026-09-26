@@ -1,0 +1,43 @@
+<!-- The account's notifications, as YouTube's bell lists them: the channel's round picture, the
+     text ("... yükledi: ..."), when, and the video's picture on the right; unread ones have a
+     blue dot. -->
+<brls:Box
+    width="auto"
+    height="auto"
+    axis="column"
+    paddingTop="12"
+    paddingLeft="20"
+    paddingRight="20">
+
+    <PageHeader id="notifications/header" title="@i18n/app/notifications" />
+
+    <brls:ScrollingFrame
+        id="notifications/scroll"
+        width="auto"
+        grow="1.0">
+
+        <brls:Box
+            width="auto"
+            height="auto"
+            axis="column"
+            paddingBottom="16">
+
+            <brls:Label
+                id="notifications/message"
+                width="auto"
+                height="auto"
+                fontSize="17"
+                lineHeight="1.5"
+                textColor="#AAAAAA"
+                marginTop="8"
+                marginLeft="8"
+                visibility="gone" />
+
+            <brls:Box
+                id="notifications/list"
+                width="auto"
+                height="auto"
+                axis="column" />
+        </brls:Box>
+    </brls:ScrollingFrame>
+</brls:Box>

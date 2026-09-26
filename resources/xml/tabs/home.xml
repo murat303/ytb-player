@@ -1,25 +1,15 @@
+<!-- Home as in YouTube's tablet app: the top bar, then (scrolling with the videos) the
+     category chips and the grid. The chips sit inside the scrolled content: the scrolling frame
+     keeps the focus inside itself, so up from the first row of cards has to find them there. -->
 <brls:Box
     width="auto"
     height="auto"
     axis="column"
-    paddingTop="20"
+    paddingTop="12"
     paddingLeft="20"
     paddingRight="20">
 
-    <brls:Label
-        id="home/status"
-        width="auto"
-        height="auto"
-        text="Loading..."
-        fontSize="20"
-        textColor="#EAEAEA"
-        marginBottom="12" />
-
-    <brls:ProgressSpinner
-        id="home/spinner"
-        width="auto"
-        height="80"
-        visibility="gone" />
+    <PageHeader id="home/header" />
 
     <brls:ScrollingFrame
         id="home/scroll"
@@ -27,10 +17,38 @@
         grow="1.0">
 
         <brls:Box
-            id="home/grid"
             width="auto"
             height="auto"
-            axis="column" />
+            axis="column">
+
+            <brls:Box
+                id="home/chips"
+                width="auto"
+                height="auto"
+                axis="row"
+                marginBottom="14" />
+
+            <brls:Label
+                id="home/status"
+                width="auto"
+                height="auto"
+                text=""
+                fontSize="18"
+                textColor="#AAAAAA"
+                marginBottom="12" />
+
+            <brls:ProgressSpinner
+                id="home/spinner"
+                width="auto"
+                height="80"
+                visibility="gone" />
+
+            <brls:Box
+                id="home/grid"
+                width="auto"
+                height="auto"
+                axis="column" />
+        </brls:Box>
 
     </brls:ScrollingFrame>
 

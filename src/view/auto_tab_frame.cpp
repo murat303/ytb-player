@@ -554,6 +554,8 @@ void AutoTabFrame::onLayout() {
  * auto sidebar item
  */
 
+// A rail like YouTube's tablet app: the icon with a small single-line label under it (a
+// larger, wrapping label broke Turkish words letter by letter: "Abon elikle r").
 const std::string autoSidebarItemXML = R"xml(
     <brls:Box
         wireframe="false"
@@ -579,16 +581,18 @@ const std::string autoSidebarItemXML = R"xml(
                 wireframe="false"
                 visibility="gone"
                 id="autoSidebar/item_icon"
-                width="34"
-                height="34"/>
+                width="30"
+                height="30"/>
 
             <brls:Label
                 wireframe="false"
                 id="autoSidebar/item_label"
                 width="auto"
                 height="auto"
-                fontSize="22"
-                marginBottom="5"
+                fontSize="13"
+                singleLine="true"
+                marginTop="5"
+                textColor="#AAAAAA"
                 horizontalAlign="center"/>
 
             <brls:Label
@@ -828,7 +832,8 @@ void AutoSidebarItem::setActive(bool active) {
 
     if (active) {
         this->activeEvent.fire(this);
-        if (this->tabStyle == AutoTabBarStyle::ACCENT || this->tabStyle == AutoTabBarStyle::INLINE )
+        // No accent bar in the rail: the filled icon and the white label mark the open tab.
+        if (this->tabStyle == AutoTabBarStyle::INLINE)
             this->accent->setVisibility(brls::Visibility::VISIBLE);
         else if (this->tabStyle == AutoTabBarStyle::PLAIN) {
             this->setBackgroundColor(this->tabItemActiveBackgroundColor);
@@ -848,7 +853,7 @@ void AutoSidebarItem::setActive(bool active) {
         else if (this->tabStyle == AutoTabBarStyle::PLAIN) {
             this->setBackgroundColor(this->tabItemBackgroundColor);
         }
-        this->label->setTextColor(theme["brls/text"]);
+        this->label->setTextColor(nvgRGB(0xAA, 0xAA, 0xAA));
 
         if (this->icon->getVisibility() == brls::Visibility::VISIBLE && !this->iconDefault.empty())
             this->icon->setImageFromSVGFile(this->iconDefault);
@@ -919,11 +924,7 @@ brls::View* AutoSidebarItem::getView(std::string id) {
 }
 
 void AutoSidebarItem::setFontSize(float size) {
-    if (this->icon->getVisibility() == brls::Visibility::VISIBLE) {
-        size -= 10;
-        if (size < 8) size = 8;
-    }
-    this->label->setFontSize(size);
+    this->label->setFontSize(std::max(8.0f, size));
 }
 
 void AutoSidebarItem::setHorizontalMode(bool value) {

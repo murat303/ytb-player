@@ -17,7 +17,7 @@
 
             <Tab
                     label="@i18n/app/home"
-                    fontSize="18"
+                    fontSize="13"
                     icon="@res/svg/home.svg"
                     iconActivate="@res/svg/home_active.svg">
                 <HomeTab/>
@@ -25,7 +25,7 @@
 
             <Tab
                     label="@i18n/app/search"
-                    fontSize="18"
+                    fontSize="13"
                     icon="@res/svg/search.svg"
                     iconActivate="@res/svg/search_active.svg">
                 <SearchTab/>
@@ -33,7 +33,7 @@
 
             <Tab
                     label="@i18n/app/subscriptions"
-                    fontSize="18"
+                    fontSize="13"
                     icon="@res/svg/subscriptions.svg"
                     iconActivate="@res/svg/subscriptions_active.svg">
                 <SubscriptionsTab/>
@@ -41,15 +41,23 @@
 
             <Tab
                     label="@i18n/app/library"
-                    fontSize="18"
+                    fontSize="13"
                     icon="@res/svg/library.svg"
                     iconActivate="@res/svg/library_active.svg">
                 <LibraryTab/>
             </Tab>
 
             <Tab
+                    label="@i18n/app/notifications"
+                    fontSize="13"
+                    icon="@res/svg/notifications.svg"
+                    iconActivate="@res/svg/notifications_active.svg">
+                <NotificationsTab/>
+            </Tab>
+
+            <Tab
                     label="@i18n/app/settings"
-                    fontSize="18"
+                    fontSize="13"
                     icon="@res/svg/settings.svg"
                     iconActivate="@res/svg/settings_active.svg">
                 <SettingsTab/>

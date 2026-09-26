@@ -9,9 +9,42 @@ namespace newpipe {
 
 namespace {
 
-// nanovg/stb_image can't decode WebP, so YouTube's vi_webp/*.webp thumbnails come
-// back as a 0 texture. Rewrite to the equivalent JPG that stb_image can decode.
+// mqdefault thumbnails are 10-20 KB, so this is about 5 MB while still covering several
+// screens of scrolling in both directions.
+constexpr size_t kMaxCachedImages = 300;
+
+// nanovg/stb_image can't decode WebP. YouTube serves WebP not only for vi_webp/*.webp but
+// also for vi/<id>/hq720.jpg?sqp=... (the .jpg name is misleading), and vi_lc/<id>/*_ko.jpg
+// has no plain-JPEG form at all. Every ytimg video thumbnail (vi, vi_webp, vi_lc, an_webp...)
+// is therefore mapped to the query-less vi/<id>/mqdefault.jpg: always a real JPEG, always
+// 16:9, and 320x180 keeps texture memory low on long feeds.
+std::string rewrite_ytimg_thumbnail_url(const std::string& url) {
+    const std::string host = "ytimg.com/";
+    const auto host_pos = url.find(host);
+    if (host_pos == std::string::npos) {
+        return {};
+    }
+    const auto kind_start = host_pos + host.size();
+    const auto kind_end = url.find('/', kind_start);
+    if (kind_end == std::string::npos) {
+        return {};
+    }
+    const std::string kind = url.substr(kind_start, kind_end - kind_start);
+    if (kind.rfind("vi", 0) != 0 && kind != "an_webp") {
+        return {};
+    }
+    const auto id_end = url.find('/', kind_end + 1);
+    if (id_end == std::string::npos || id_end == kind_end + 1) {
+        return {};
+    }
+    return "https://i.ytimg.com/vi/" + url.substr(kind_end + 1, id_end - kind_end - 1) + "/mqdefault.jpg";
+}
+
 std::string rewrite_unsupported_image_url(const std::string& url) {
+    const std::string thumbnail = rewrite_ytimg_thumbnail_url(url);
+    if (!thumbnail.empty()) {
+        return thumbnail;
+    }
     std::string rewritten = url;
     const std::string webp_path = "/vi_webp/";
     const std::string jpg_path = "/vi/";
@@ -71,11 +104,9 @@ void ImageLoader::load(const std::string& url, brls::Image* target) {
     target->setImageAsync([fetch_url, this](std::function<void(const std::string&, size_t)> cb) {
         std::string cached;
         if (tryGetCached(fetch_url, &cached)) {
-            logf("image: cache hit %s bytes=%zu", fetch_url.c_str(), cached.size());
             cb(cached, cached.size());
             return;
         }
-        logf("image: queue %s", fetch_url.c_str());
         std::lock_guard<std::mutex> lock(mutex_);
         queue_.push({fetch_url, cb});
     });
@@ -93,7 +124,15 @@ bool ImageLoader::tryGetCached(const std::string& url, std::string* out) {
 
 void ImageLoader::putCache(const std::string& url, const std::string& data) {
     std::lock_guard<std::mutex> lock(cache_mutex_);
-    cache_[url] = data;
+    if (cache_.emplace(url, data).second) {
+        cache_order_.push_back(url);
+    }
+    // The loader lives for the whole app run (it survives the UI teardown around playback),
+    // so without a cap every thumbnail ever seen stayed in memory.
+    while (cache_order_.size() > kMaxCachedImages) {
+        cache_.erase(cache_order_.front());
+        cache_order_.pop_front();
+    }
 }
 
 void ImageLoader::worker() {
@@ -117,7 +156,6 @@ void ImageLoader::worker() {
 
         std::string cached;
         if (tryGetCached(request.url, &cached)) {
-            logf("image: cache hit (worker) %s bytes=%zu", request.url.c_str(), cached.size());
             request.callback(cached, cached.size());
             continue;
         }

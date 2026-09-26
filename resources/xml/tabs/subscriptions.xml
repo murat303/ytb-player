@@ -1,35 +1,14 @@
+<!-- Subscriptions as in YouTube's app: the top bar; then (scrolling with the videos) the row of
+     subscribed channels (round pictures, sliding sideways), the filter chips and the grid. -->
 <brls:Box
     width="auto"
     height="auto"
     axis="column"
-    paddingTop="20"
+    paddingTop="12"
     paddingLeft="20"
     paddingRight="20">
 
-    <brls:Label
-        id="subscriptions/status"
-        width="auto"
-        height="auto"
-        text="로그인 필요"
-        fontSize="20"
-        textColor="#FFFFFF"
-        marginBottom="8" />
-
-    <brls:Label
-        id="subscriptions/body"
-        width="auto"
-        height="auto"
-        lineHeight="1.55"
-        text="RB로 세션 관리"
-        fontSize="18"
-        textColor="#D0D0D0"
-        marginBottom="12" />
-
-    <brls:ProgressSpinner
-        id="subscriptions/spinner"
-        width="auto"
-        height="80"
-        visibility="gone" />
+    <PageHeader id="subscriptions/header" title="@i18n/app/subscriptions" />
 
     <brls:ScrollingFrame
         id="subscriptions/scroll"
@@ -37,10 +16,63 @@
         grow="1.0">
 
         <brls:Box
-            id="subscriptions/grid"
             width="auto"
             height="auto"
-            axis="column" />
+            axis="column">
+
+            <brls:HScrollingFrame
+                id="subscriptions/channels_scroll"
+                width="auto"
+                height="116"
+                marginBottom="8"
+                visibility="gone">
+
+                <brls:Box
+                    id="subscriptions/channels"
+                    width="auto"
+                    height="auto"
+                    axis="row" />
+            </brls:HScrollingFrame>
+
+            <brls:Box
+                id="subscriptions/chips"
+                width="auto"
+                height="auto"
+                axis="row"
+                marginBottom="14"
+                visibility="gone" />
+
+            <brls:Label
+                id="subscriptions/status"
+                width="auto"
+                height="auto"
+                text="@i18n/app/subscriptions"
+                fontSize="20"
+                textColor="#FFFFFF"
+                marginBottom="8" />
+
+            <brls:Label
+                id="subscriptions/body"
+                width="auto"
+                height="auto"
+                lineHeight="1.55"
+                text="@i18n/subscriptions/controls"
+                fontSize="18"
+                textColor="#D0D0D0"
+                marginBottom="12" />
+
+            <brls:ProgressSpinner
+                id="subscriptions/spinner"
+                width="auto"
+                height="80"
+                visibility="gone" />
+
+            <brls:Box
+                id="subscriptions/grid"
+                width="auto"
+                height="auto"
+                axis="column" />
+        </brls:Box>
 
     </brls:ScrollingFrame>
 

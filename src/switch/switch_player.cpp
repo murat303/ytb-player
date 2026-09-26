@@ -7,6 +7,7 @@
 #include <clocale>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <chrono>
 #include <condition_variable>
@@ -19,7 +20,9 @@
 #include <utility>
 #include <vector>
 
+#ifdef __SWITCH__
 #include <switch.h>
+#endif
 
 #define SDL_MAIN_HANDLED
 #include <SDL2/SDL.h>
@@ -30,9 +33,20 @@
 #include <mpv/render_gl.h>
 #include <mpv/stream_cb.h>
 
+#include "newpipe/app_paths.hpp"
+#include "newpipe/content_locale.hpp"
 #include "newpipe/i18n.hpp"
+#include "newpipe/library_store.hpp"
+#include "newpipe/playback_helper.hpp"
+#include "newpipe/runtime.hpp"
+#include "newpipe/sponsorblock.hpp"
+#include "newpipe/subtitles.hpp"
+#include "newpipe/youtube_catalog_service.hpp"
 #include "newpipe/log.hpp"
+#include "newpipe/osd_font.hpp"
+#include "newpipe/settings_store.hpp"
 #include "newpipe/ump.hpp"
+#include "newpipe/watch_progress_store.hpp"
 #include "newpipe/youtube_resolver.hpp"
 
 namespace newpipe {
@@ -50,6 +64,39 @@ constexpr float kPi = 3.14159265f;
 constexpr size_t kInitialStreamBufferBytes = 512 * 1024;
 constexpr double kShortSeekSeconds = 10.0;
 constexpr double kLongSeekSeconds = 60.0;
+// Playback speeds cycled with Y; the choice carries over to the next videos of this run.
+constexpr double kPlaybackSpeeds[] = {1.0, 1.25, 1.5, 1.75, 2.0, 0.75};
+double g_playback_speed = 1.0;
+// The video the loop was switched on for: another quality reopens it, looping still.
+std::string g_loop_video_id;
+
+std::string format_speed(double speed) {
+    char text[16];
+    std::snprintf(text, sizeof(text), "%.2f", speed);
+    std::string value = text;
+    while (!value.empty() && value.back() == '0') {
+        value.pop_back();
+    }
+    if (!value.empty() && value.back() == '.') {
+        value.pop_back();
+    }
+    return value;
+}
+
+// mpv hands the path of an HLS playlist to FFmpeg unchanged, and FFmpeg reads the "sdmc:"
+// prefix as an unknown protocol ("avformat_open_input() failed"). So on the Switch the trimmed
+// playlist never opened and every video fell back to the full master: all ~20 variant
+// playlists fetched before the first frame, and the VP9 track picked. A path relative to the
+// working directory carries no prefix.
+std::string local_playlist_url(const std::string& path) {
+#ifdef __SWITCH__
+    const size_t slash = path.find_last_of('/');
+    if (slash != std::string::npos && chdir(path.substr(0, slash).c_str()) == 0) {
+        return path.substr(slash + 1);
+    }
+#endif
+    return path;
+}
 
 std::string translate_loading_text(const std::string& value) {
     if (value == "RESOLVING YOUTUBE STREAM") {
@@ -75,6 +122,94 @@ std::string translate_loading_text(const std::string& value) {
     }
     return value;
 }
+
+// The video's thumbnail behind the loading screen (16:9 RGBA); filled by a helper thread.
+struct LoadingPictureState {
+    std::mutex mutex;
+    std::vector<unsigned char> pixels;
+    int width = 0;
+    int height = 0;
+};
+
+// The video picked to play after the current one; filled by a helper thread.
+struct NextVideoState {
+    std::mutex mutex;
+    bool done = false;
+    std::optional<StreamItem> item;
+    // Its thumbnail as RGBA pixels, handed to a texture by the countdown panel.
+    std::vector<unsigned char> thumbnail;
+    int thumbnail_width = 0;
+    int thumbnail_height = 0;
+};
+
+constexpr int kAutoplayCountdownSeconds = 5;
+
+// Shorts play one after another, as in YouTube's Shorts player: down (or a finger moving up)
+// goes to the next, up to the previous, the end of one starts the next. Every Short is a
+// player run of its own, so the list lives here between runs: the Shorts in order, the one
+// playing and the params of the ones after the last (from YouTube's sequence of the first).
+struct ShortsQueue {
+    std::vector<StreamItem> items;
+    size_t index = 0;
+    std::string more;
+};
+
+ShortsQueue& shorts_queue() {
+    static ShortsQueue queue;
+    return queue;
+}
+
+// More Shorts, or the title of one that came without it, fetched by a helper thread.
+struct ShortsFetchState {
+    std::mutex mutex;
+    bool done = false;
+    std::vector<StreamItem> items;
+    std::string more;
+    std::string title;
+};
+
+// A vertical move of the finger this long is a swipe to the next or previous Short.
+constexpr int kShortsSwipePixels = 90;
+
+// SponsorBlock segments of the current video, filled by a helper thread.
+struct SponsorState {
+    std::mutex mutex;
+    bool done = false;
+    std::vector<SkipSegment> segments;
+};
+
+// Chapters of the current video, filled by a helper thread.
+struct ChapterState {
+    std::mutex mutex;
+    bool done = false;
+    std::vector<Chapter> chapters;
+};
+
+// Subtitles of the current video, filled by a helper thread.
+struct SubtitleState {
+    std::mutex mutex;
+    bool done = false;
+    std::optional<CaptionTrack> track;
+    std::vector<SubtitleCue> cues;
+};
+
+// Turkish names for the subtitle languages YouTube lists most (its own names are English).
+std::string turkish_language_name(const std::string& code, const std::string& fallback) {
+    static const std::pair<const char*, const char*> names[] = {
+        {"tr", "Türkçe"}, {"en", "İngilizce"}, {"de", "Almanca"}, {"fr", "Fransızca"},
+        {"es", "İspanyolca"}, {"it", "İtalyanca"}, {"ar", "Arapça"}, {"ru", "Rusça"},
+        {"ja", "Japonca"}, {"ko", "Korece"}, {"pt", "Portekizce"}, {"nl", "Felemenkçe"},
+    };
+    for (const auto& [key, name] : names) {
+        if (same_language(code, key)) {
+            return name;
+        }
+    }
+    return fallback.empty() ? code : fallback;
+}
+
+// Loudness YouTube normalizes to; like YouTube, only louder videos are turned down.
+constexpr double kTargetLoudnessLufs = -14.0;
 
 struct StreamSession {
     class SwitchPlayer* player = nullptr;
@@ -176,26 +311,76 @@ std::string trim_text(std::string value) {
     return value;
 }
 
-std::string uppercase_ascii(std::string value) {
-    std::transform(value.begin(), value.end(), value.begin(), [](unsigned char ch) {
-        if (ch >= 32 && ch <= 126) {
-            return static_cast<char>(std::toupper(ch));
-        }
-        return static_cast<char>(' ');
-    });
-    return trim_text(value);
+// Base letter of a Latin-1 / Turkish letter for the OSD bitmap font, 0 when there is none.
+char osd_base_letter(unsigned int code_point) {
+    switch (code_point) {
+        case 0x011E: case 0x011F: return 'G';  // Gg with breve
+        case 0x0130: case 0x0131: return 'I';  // dotted capital I, dotless i
+        case 0x015E: case 0x015F: return 'S';  // Ss with cedilla
+        case 0x2018: case 0x2019: return '\'';
+        case 0x2013: case 0x2014: return '-';
+        default: break;
+    }
+    if (code_point < 0xC0 || code_point > 0xFF) {
+        return 0;
+    }
+    static const char kLatin1[] =
+        "AAAAAAACEEEEIIII"  // C0-CF
+        "DNOOOOOxOUUUUYTS"  // D0-DF
+        "AAAAAAACEEEEIIII"  // E0-EF
+        "DNOOOOO/OUUUUYTY"; // F0-FF
+    return kLatin1[code_point - 0xC0];
 }
 
+// The OSD bitmap font only has A-Z, digits and a few symbols. Every non-ASCII byte used to
+// become a blank, so a Turkish title read "ANLATT  KLAR  N" and emoji left wide gaps. Letters
+// now map to their base letter and characters without one (emoji, CJK) are dropped.
+std::string uppercase_ascii(const std::string& value) {
+    std::string out;
+    out.reserve(value.size());
+    for (size_t i = 0; i < value.size();) {
+        const unsigned char lead = static_cast<unsigned char>(value[i]);
+        if (lead < 0x80) {
+            out.push_back(lead >= 32 && lead <= 126 ? static_cast<char>(std::toupper(lead)) : ' ');
+            i++;
+            continue;
+        }
+        const size_t length = lead >= 0xF0 ? 4 : lead >= 0xE0 ? 3 : lead >= 0xC0 ? 2 : 1;
+        unsigned int code_point = 0;
+        if (length == 2 && i + 1 < value.size()) {
+            code_point = ((lead & 0x1Fu) << 6) | (static_cast<unsigned char>(value[i + 1]) & 0x3Fu);
+        } else if (length == 3 && i + 2 < value.size()) {
+            code_point = ((lead & 0x0Fu) << 12)
+                | ((static_cast<unsigned char>(value[i + 1]) & 0x3Fu) << 6)
+                | (static_cast<unsigned char>(value[i + 2]) & 0x3Fu);
+        }
+        i += length;
+        const char base = osd_base_letter(code_point);
+        if (base != 0) {
+            out.push_back(base);
+        }
+    }
+    return trim_text(out);
+}
+
+// Counts characters, not bytes: a cut inside a UTF-8 sequence would break the letter.
 std::string clamp_text(const std::string& text, size_t max_length) {
-    if (text.size() <= max_length) {
+    const size_t keep = max_length <= 3 ? max_length : max_length - 3;
+    size_t characters = 0;
+    size_t keep_bytes = text.size();
+    for (size_t i = 0; i < text.size(); i++) {
+        if ((static_cast<unsigned char>(text[i]) & 0xC0) == 0x80) {
+            continue;
+        }
+        if (characters == keep) {
+            keep_bytes = i;
+        }
+        characters++;
+    }
+    if (characters <= max_length) {
         return text;
     }
-
-    if (max_length <= 3) {
-        return text.substr(0, max_length);
-    }
-
-    return text.substr(0, max_length - 3) + "...";
+    return text.substr(0, keep_bytes) + (max_length <= 3 ? "" : "...");
 }
 
 std::string trim(std::string value) {
@@ -371,12 +556,192 @@ bool write_text_file(const std::string& path, const std::string& body) {
     return written == body.size();
 }
 
+// The player's TrueType font while a player runs (set in run(), cleared in cleanup()).
+OsdFont* g_osd_font = nullptr;
+
+bool osd_font_ready() {
+    return g_osd_font && g_osd_font->ready();
+}
+
+// Pixel height of the TrueType text for the scale the layout uses (5x7 cells of scale px).
+int osd_pixel_height(int scale) {
+    return scale * 9;
+}
+
+// Text as the overlay shows it: unchanged with the TrueType font (Turkish letters, mixed
+// case), capital ASCII for the bitmap fallback.
+std::string osd_text(const std::string& value) {
+    if (!osd_font_ready()) {
+        return uppercase_ascii(value);
+    }
+    std::string out = value;
+    for (char& ch : out) {
+        if (static_cast<unsigned char>(ch) < 0x20) {
+            ch = ' ';
+        }
+    }
+    return out;
+}
+
 int measure_text_width(const std::string& text, int scale) {
     if (text.empty()) {
         return 0;
     }
+    if (osd_font_ready()) {
+        return g_osd_font->measure(text, osd_pixel_height(scale));
+    }
 
-    return static_cast<int>(text.size()) * scale * 6 - scale;
+    return static_cast<int>(uppercase_ascii(text).size()) * scale * 6 - scale;
+}
+
+// A rectangle in window pixels (y down): where something was last drawn, for touch hit tests.
+struct ScreenRect {
+    int x = 0;
+    int y = 0;
+    int w = 0;
+    int h = 0;
+
+    bool contains(int px, int py) const {
+        return w > 0 && px >= x && px < x + w && py >= y && py < y + h;
+    }
+};
+
+// The round button in the middle of the player: a translucent dark disc with a white play
+// triangle or pause bars, as RGBA pixels (size x size), 4x4 supersampled for smooth edges.
+std::vector<unsigned char> make_round_button(int size, bool pause) {
+    std::vector<unsigned char> pixels(static_cast<size_t>(size) * size * 4, 0);
+    const float s = static_cast<float>(size);
+    auto in_icon = [&](float x, float y) {
+        if (pause) {
+            const bool rows = y >= s * 0.30f && y <= s * 0.70f;
+            return rows && ((x >= s * 0.34f && x <= s * 0.45f) || (x >= s * 0.55f && x <= s * 0.66f));
+        }
+        // Triangle (0.38, 0.28) - (0.38, 0.72) - (0.74, 0.50), pointing right.
+        if (x < s * 0.38f || x > s * 0.74f) {
+            return false;
+        }
+        const float half = (s * 0.74f - x) / (s * 0.36f) * (s * 0.22f);
+        return std::fabs(y - s * 0.50f) <= half;
+    };
+    for (int py = 0; py < size; py++) {
+        for (int px = 0; px < size; px++) {
+            float disc = 0.0f;
+            float icon = 0.0f;
+            for (int sy = 0; sy < 4; sy++) {
+                for (int sx = 0; sx < 4; sx++) {
+                    const float x = px + (sx + 0.5f) / 4.0f;
+                    const float y = py + (sy + 0.5f) / 4.0f;
+                    const float dx = x - s / 2.0f;
+                    const float dy = y - s / 2.0f;
+                    if (dx * dx + dy * dy <= s * s / 4.0f) {
+                        disc += 1.0f / 16.0f;
+                        icon += in_icon(x, y) ? 1.0f / 16.0f : 0.0f;
+                    }
+                }
+            }
+            // White icon over a black disc at 55%.
+            const float background = 0.55f * (disc - icon);
+            const float alpha = icon + background;
+            const float white = alpha > 0.0f ? icon / alpha : 0.0f;
+            unsigned char* out = &pixels[(static_cast<size_t>(py) * size + px) * 4];
+            out[0] = out[1] = out[2] = static_cast<unsigned char>(std::lround(white * 255.0f));
+            out[3] = static_cast<unsigned char>(std::lround(alpha * 255.0f));
+        }
+    }
+    return pixels;
+}
+
+// A filled circle as coverage (size x size, one byte per pixel), 4x4 supersampled edges:
+// the progress bar's knob, drawn in red through OsdFont::draw_mask.
+std::vector<unsigned char> make_disc_mask(int size) {
+    std::vector<unsigned char> coverage(static_cast<size_t>(size) * size, 0);
+    const float radius = size / 2.0f;
+    for (int py = 0; py < size; py++) {
+        for (int px = 0; px < size; px++) {
+            int inside = 0;
+            for (int sy = 0; sy < 4; sy++) {
+                for (int sx = 0; sx < 4; sx++) {
+                    const float dx = px + (sx + 0.5f) / 4.0f - radius;
+                    const float dy = py + (sy + 0.5f) / 4.0f - radius;
+                    inside += dx * dx + dy * dy <= radius * radius ? 1 : 0;
+                }
+            }
+            coverage[static_cast<size_t>(py) * size + px] = static_cast<unsigned char>(inside * 255 / 16);
+        }
+    }
+    return coverage;
+}
+
+// The loading spinner as YouTube draws it: a thin ring with a quarter left open. The overlay
+// cannot rotate a texture, so there is one mask per step of a turn.
+constexpr int kSpinnerSteps = 36;
+
+std::vector<unsigned char> make_arc_mask(int size, float thickness, float start) {
+    std::vector<unsigned char> coverage(static_cast<size_t>(size) * size, 0);
+    const float center = size / 2.0f;
+    const float middle = center - 1.0f - thickness / 2.0f;
+    const float sweep = 1.5f * kPi;
+    for (int py = 0; py < size; py++) {
+        for (int px = 0; px < size; px++) {
+            const float dx = px + 0.5f - center;
+            const float dy = py + 0.5f - center;
+            const float distance = std::sqrt(dx * dx + dy * dy);
+            // Soft over a pixel at the ring's edges and at the arc's two ends.
+            const float ring = std::clamp(thickness / 2.0f + 0.5f - std::fabs(distance - middle), 0.0f, 1.0f);
+            if (ring <= 0.0f) {
+                continue;
+            }
+            float angle = std::fmod(std::atan2(dy, dx) - start, 2.0f * kPi);
+            if (angle < 0.0f) {
+                angle += 2.0f * kPi;
+            }
+            const float along = angle <= sweep ? std::min(angle, sweep - angle)
+                                               : -std::min(angle - sweep, 2.0f * kPi - angle);
+            const float arc = std::clamp(0.5f + along * middle, 0.0f, 1.0f);
+            coverage[static_cast<size_t>(py) * size + px] = static_cast<unsigned char>(ring * arc * 255.0f);
+        }
+    }
+    return coverage;
+}
+
+// Text cut (by whole characters) to max_width, with an ellipsis when something was cut.
+std::string fit_osd_text(OsdFont& font, const std::string& text, int pixel_height, int max_width) {
+    if (font.measure(text, pixel_height) <= max_width) {
+        return text;
+    }
+    std::string cut = text;
+    while (!cut.empty()) {
+        size_t last = cut.size() - 1;
+        while (last > 0 && (static_cast<unsigned char>(cut[last]) & 0xC0) == 0x80) {
+            last--;
+        }
+        cut.erase(last);
+        while (!cut.empty() && cut.back() == ' ') {
+            cut.pop_back();
+        }
+        if (font.measure(cut + "\u2026", pixel_height) <= max_width) {
+            return cut + "\u2026";
+        }
+    }
+    return "\u2026";
+}
+
+// A title in at most two lines, broken between words; the second one is cut to fit.
+std::vector<std::string> wrap_osd_title(OsdFont& font, const std::string& text, int pixel_height, int max_width) {
+    if (font.measure(text, pixel_height) <= max_width) {
+        return {text};
+    }
+    size_t split = 0;
+    for (size_t space = text.find(' '); space != std::string::npos; space = text.find(' ', space + 1)) {
+        if (font.measure(text.substr(0, space), pixel_height) > max_width) {
+            break;
+        }
+        split = space;
+    }
+    if (split == 0) {
+        return {fit_osd_text(font, text, pixel_height, max_width)};
+    }
+    return {text.substr(0, split), fit_osd_text(font, text.substr(split + 1), pixel_height, max_width)};
 }
 
 void fill_rect(int x, int y, int width, int height, int screen_height, float r, float g, float b) {
@@ -400,8 +765,15 @@ void draw_text_line(
     float r,
     float g,
     float b) {
+    if (osd_font_ready()) {
+        GLint viewport[4] = {0, 0, 0, 0};
+        glGetIntegerv(GL_VIEWPORT, viewport);
+        g_osd_font->draw(text, x, y, osd_pixel_height(scale), viewport[2], screen_height, r, g, b);
+        return;
+    }
+    // The bitmap font has capital ASCII only; texts with Turkish letters are folded here.
     int cursor_x = x;
-    for (char ch : text) {
+    for (char ch : uppercase_ascii(text)) {
         const Glyph& glyph = glyph_for_char(ch);
         for (size_t row = 0; row < glyph.rows.size(); row++) {
             for (int col = 0; col < 5; col++) {
@@ -446,15 +818,31 @@ public:
     }
 
     ~SwitchPlayer() {
+        if (g_osd_font == &osd_font_) {
+            g_osd_font = nullptr;
+        }
         cleanup();
     }
 
     bool run(std::string& error) {
         logf("player: run begin title=%s request_url=%s", request_.title.c_str(), request_.url.c_str());
+#ifndef __SWITCH__
+        // Screenshot tests can compare with the old bitmap font.
+        const bool use_font = std::getenv("NEWPIPE_OSD_BITMAP") == nullptr;
+#else
+        const bool use_font = true;
+#endif
+        if (use_font && osd_font_.load()) {
+            g_osd_font = &osd_font_;
+            osd_title_ = clamp_text(osd_text(request_.title), 52);
+            start_loading_picture_fetch();
+        }
+#ifdef __SWITCH__
         appletSetMediaPlaybackState(true);
+#endif
         set_loading_status(
             newpipe::tr("player/loading/preparing_playback"),
-            clamp_text(uppercase_ascii(request_.title), 40));
+            clamp_text(osd_text(request_.title), 40));
 
         if (!init_sdl(error)) {
             logf("player: init_sdl failed error=%s", error.c_str());
@@ -467,6 +855,27 @@ public:
             return false;
         }
 
+        autoplay_enabled_ = SettingsStore::instance().settings().autoplay_next;
+        if (const auto video_id = YouTubeResolver::extract_video_id(request_.url)) {
+            video_id_ = *video_id;
+            if (SettingsStore::instance().settings().skip_sponsors && !active_is_live_) {
+                start_sponsor_fetch();
+            }
+            if (!active_is_live_) {
+                start_chapter_fetch();
+            }
+            subtitles_on_ = SettingsStore::instance().settings().subtitles_enabled;
+            if (subtitles_on_) {
+                start_subtitle_fetch();
+            }
+            if (!active_is_live_) {
+                resume_from_ = WatchProgressStore::instance().resume_position(video_id_);
+            }
+            if (request_.url.find("/shorts/") != std::string::npos) {
+                begin_shorts();
+            }
+        }
+
         if (!init_mpv(error)) {
             logf("player: init_mpv failed error=%s", error.c_str());
             return false;
@@ -475,7 +884,7 @@ public:
         set_loading_status(
             newpipe::tr("player/loading/opening_media_stream"),
             active_quality_label_.empty() ? newpipe::tr("player/loading/waiting_for_mpv_load")
-                                          : clamp_text(uppercase_ascii(active_quality_label_), 40));
+                                          : clamp_text(osd_text(active_quality_label_), 40));
         if (!load_file(error)) {
             logf("player: load_file failed error=%s", error.c_str());
             return false;
@@ -484,6 +893,11 @@ public:
         player_input_ready_at_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
         mpv_events_pending_.store(true);
         loop();
+        save_watch_progress();
+        // The loop is kept only for the reopen with another quality.
+        if (!reopening_) {
+            g_loop_video_id.clear();
+        }
         error = terminal_error_;
         logf("player: run end ok=%d", terminal_error_.empty() ? 1 : 0);
         return terminal_error_.empty();
@@ -699,8 +1113,8 @@ private:
 
     void set_loading_status(const std::string& title, const std::string& detail) {
         std::lock_guard<std::mutex> lock(status_mutex_);
-        const std::string normalized_title = clamp_text(uppercase_ascii(title), 40);
-        const std::string normalized_detail = clamp_text(uppercase_ascii(detail), 48);
+        const std::string normalized_title = clamp_text(osd_text(title), 40);
+        const std::string normalized_detail = clamp_text(osd_text(detail), 48);
         if (normalized_title == loading_title_ && normalized_detail == loading_detail_) {
             return;
         }
@@ -715,7 +1129,7 @@ private:
     }
 
     void show_osd_message(const std::string& message, int duration_ms = 2500) {
-        osd_message_ = clamp_text(uppercase_ascii(message), 52);
+        osd_message_ = clamp_text(osd_text(message), 52);
         osd_visible_until_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(duration_ms);
     }
 
@@ -757,7 +1171,7 @@ private:
 
         char* media_title = mpv_get_property_string(mpv_, "media-title");
         if (media_title) {
-            const std::string normalized = clamp_text(uppercase_ascii(media_title), 52);
+            const std::string normalized = clamp_text(osd_text(media_title), 52);
             if (!normalized.empty()) {
                 osd_title_ = normalized;
             }
@@ -806,30 +1220,45 @@ private:
         force_redraw = true;
     }
 
+    // The info bar, drawn like YouTube's: the video darkens towards the top and the bottom
+    // edge; the title and the status sit in the top shade; the red progress bar with its knob,
+    // the clock with the chapter and the button hints in the bottom one.
     void render_playback_osd(int width, int height) {
         refresh_osd_snapshot();
+        osd_top_rect_ = {};
+        osd_bottom_rect_ = {};
+        osd_bar_rect_ = {};
+        round_button_rect_ = {};
+        settings_button_rect_ = {};
         if (!should_draw_osd()) {
             return;
         }
 
-        const int margin = std::max(20, width / 40);
-        const int top_panel_width = std::min(width - margin * 2, width * 3 / 4);
-        const int top_panel_height = std::max(92, height / 8);
-        const int top_panel_x = margin;
-        const int top_panel_y = margin;
-        const int bottom_panel_width = width - margin * 2;
-        const int bottom_panel_height = std::max(108, height / 6);
-        const int bottom_panel_x = margin;
-        const int bottom_panel_y = height - bottom_panel_height - margin;
+        // Layout in 720p pixels, scaled to the screen (1.5x docked at 1080p).
+        const float unit = height / 720.0f;
+        auto px = [unit](float value) { return std::max(1, static_cast<int>(std::lround(value * unit))); };
+        const int side = px(40);
+        const int top_shade = px(170);
+        const int bottom_shade = px(210);
+        osd_top_rect_ = {0, 0, width, top_shade};
+        osd_bottom_rect_ = {0, height - bottom_shade, width, bottom_shade};
+        osd_font_.fade(0, 0, width, top_shade, width, height, 0.0f, 0.0f, 0.0f, 0.78f, true);
+        osd_font_.fade(0, height - bottom_shade, width, bottom_shade, width, height, 0.0f, 0.0f, 0.0f, 0.86f, false);
 
-        fill_rect(top_panel_x, top_panel_y, top_panel_width, top_panel_height, height, 0.05f, 0.05f, 0.05f);
-        fill_rect(
-            bottom_panel_x, bottom_panel_y, bottom_panel_width, bottom_panel_height, height, 0.04f, 0.04f, 0.04f);
+        // The round play/pause button in the middle (touch); not over the countdown or a list.
+        if (!autoplay_counting_down() && !menu_open()) {
+            const int size = std::max(72, height / 7);
+            if (const unsigned int texture = round_button_texture(!last_pause_state_)) {
+                round_button_rect_ = {(width - size) / 2, (height - size) / 2, size, size};
+                osd_font_.draw_image(texture, round_button_rect_.x, round_button_rect_.y, size, size, width, height);
+            }
+        }
 
-        const int title_scale = std::max(2, height / 300);
+        // Top: the title, and under it the state (or the latest message).
+        const int title_scale = std::max(3, height / 240);
         const int meta_scale = std::max(2, height / 360);
         const std::string title = clamp_text(
-            osd_title_.empty() ? clamp_text(uppercase_ascii(request_.title), 52) : osd_title_, 52);
+            osd_title_.empty() ? clamp_text(osd_text(request_.title), 60) : osd_title_, 60);
         const std::string playback_state = last_pause_state_ ? newpipe::tr("player/status/paused")
             : active_is_live_ ? newpipe::tr("player/status/live")
                               : newpipe::tr("player/status/playing");
@@ -839,96 +1268,95 @@ private:
                   playback_state
                       + (active_quality_label_.empty()
                              ? ""
-                             : "  " + clamp_text(uppercase_ascii(active_quality_label_), 18))
-                      + "  " + newpipe::tr("player/status/volume")
-                      + " " + std::to_string(static_cast<int>(std::lround(last_volume_))),
-                  52);
-
+                             : "  •  " + clamp_text(osd_text(active_quality_label_), 18)),
+                  60);
         if (!title.empty()) {
-            draw_text_line(
-                top_panel_x + 18,
-                top_panel_y + 16,
-                title_scale,
-                height,
-                title,
-                0.96f,
-                0.96f,
-                0.96f);
+            draw_text_line(side, px(24), title_scale, height, title, 1.0f, 1.0f, 1.0f);
+        }
+        // Top right: the settings list's button, for a finger ("+" on the pad).
+        if (!menu_open()) {
+            const std::string label = newpipe::tr("player/settings/button");
+            const int button_w = measure_text_width(label, meta_scale) + px(32);
+            const int button_h = meta_scale * 9 + px(18);
+            settings_button_rect_ = {width - side - button_w, px(22), button_w, button_h};
+            osd_font_.fill(settings_button_rect_.x, settings_button_rect_.y, button_w, button_h, width, height, 1.0f,
+                           1.0f, 1.0f, 0.18f);
+            draw_text_line(settings_button_rect_.x + px(16), settings_button_rect_.y + px(9), meta_scale, height, label,
+                           1.0f, 1.0f, 1.0f);
         }
         draw_text_line(
-            top_panel_x + 18,
-            top_panel_y + 16 + title_scale * 9,
+            side,
+            px(24) + title_scale * 9 + px(10),
             meta_scale,
             height,
             status_line,
-            last_pause_state_ ? 1.0f : 0.78f,
-            last_pause_state_ ? 0.78f : 0.78f,
-            last_pause_state_ ? 0.32f : 0.78f);
+            last_pause_state_ ? 1.0f : 0.80f,
+            last_pause_state_ ? 0.78f : 0.80f,
+            last_pause_state_ ? 0.32f : 0.80f);
 
-        const int bar_x = bottom_panel_x + 20;
-        const int bar_y = bottom_panel_y + 18;
-        const int bar_width = bottom_panel_width - 40;
-        const int bar_height = std::max(10, height / 72);
-        fill_rect(bar_x, bar_y, bar_width, bar_height, height, 0.18f, 0.18f, 0.18f);
-
+        // Bottom: the progress bar. While seeking (a held button or a finger) it and the clock
+        // preview where the seek lands.
+        const bool scrubbing = scrub_target_ >= 0.0;
+        const double shown_pos = scrubbing ? scrub_target_ : last_time_pos_;
+        const int bar_x = side;
+        const int bar_width = width - side * 2;
+        const int bar_height = scrubbing ? px(8) : px(5);
+        const int bar_center = height - px(92);
+        const int bar_y = bar_center - bar_height / 2;
+        osd_font_.fill(bar_x, bar_y, bar_width, bar_height, width, height, 1.0f, 1.0f, 1.0f, 0.28f);
         if (active_is_live_) {
-            fill_rect(bar_x, bar_y, std::max(72, bar_width / 5), bar_height, height, 0.92f, 0.20f, 0.18f);
+            fill_rect(bar_x, bar_y, bar_width, bar_height, height, 1.0f, 0.0f, 0.0f);
         } else if (last_duration_ > 1.0) {
+            osd_bar_rect_ = {bar_x, bar_y, bar_width, bar_height};
             // How far the cache reaches, i.e. how far a seek can currently land.
             if (const auto buffered = buffered_ratio()) {
-                fill_rect(
-                    bar_x,
-                    bar_y,
-                    static_cast<int>(std::round(bar_width * *buffered)),
-                    bar_height,
-                    height,
-                    0.42f,
-                    0.42f,
-                    0.42f);
+                osd_font_.fill(bar_x, bar_y, static_cast<int>(std::round(bar_width * *buffered)), bar_height, width,
+                               height, 1.0f, 1.0f, 1.0f, 0.35f);
             }
-            const double ratio = clamp_double(last_time_pos_ / last_duration_, 0.0, 1.0);
-            fill_rect(bar_x, bar_y, static_cast<int>(std::round(bar_width * ratio)), bar_height, height, 0.95f, 0.95f, 0.95f);
+            const int played_x =
+                bar_x + static_cast<int>(std::round(bar_width * clamp_double(shown_pos / last_duration_, 0.0, 1.0)));
+            fill_rect(bar_x, bar_y, played_x - bar_x, bar_height, height, 1.0f, 0.0f, 0.0f);
+            // Chapter starts split the bar with small gaps, as on YouTube.
+            for (size_t i = 1; i < chapters_.size(); i++) {
+                const double at = clamp_double(chapters_[i].start / last_duration_, 0.0, 1.0);
+                const int x = bar_x + static_cast<int>(std::round(bar_width * at));
+                osd_font_.fill(x - px(1), bar_y, px(3), bar_height, width, height, 0.0f, 0.0f, 0.0f, 0.8f);
+            }
+            // The knob on the played end, bigger while seeking.
+            const int knob = scrubbing ? px(22) : px(15);
+            if (const unsigned int disc = knob_texture()) {
+                osd_font_.draw_mask(disc, played_x - knob / 2, bar_center - knob / 2, knob, knob, width, height, 1.0f,
+                                    0.0f, 0.0f, 1.0f);
+            }
         }
 
-        const std::string left_time =
-            active_is_live_ ? newpipe::tr("player/status/live") : format_playback_time(last_time_pos_);
-        const std::string right_time =
-            active_is_live_ ? clamp_text(uppercase_ascii(active_quality_label_), 18) : format_playback_time(last_duration_);
-        const std::string center_line = clamp_text(newpipe::tr("player/osd_controls"), 52);
+        // Under the bar: the clock and the chapter on the left, the volume on the right.
+        const int row_y = bar_center + px(18);
+        const std::string clock = active_is_live_
+            ? newpipe::tr("player/status/live")
+            : format_playback_time(shown_pos) + " / " + format_playback_time(last_duration_);
+        draw_text_line(side, row_y, meta_scale, height, clock, 1.0f, 1.0f, 1.0f);
+        const int chapter = chapter_at(shown_pos);
+        if (chapter >= 0) {
+            draw_text_line(side + measure_text_width(clock, meta_scale), row_y, meta_scale, height,
+                           "  •  " + clamp_text(osd_text(chapters_[chapter].title), 44), 0.82f, 0.82f, 0.82f);
+        }
+        const std::string volume = osd_text(
+            newpipe::tr("player/osd/volume", static_cast<int>(std::lround(last_volume_))));
+        draw_text_line(width - side - measure_text_width(volume, meta_scale), row_y, meta_scale, height, volume,
+                       0.82f, 0.82f, 0.82f);
 
-        draw_text_line(bar_x, bar_y + bar_height + 14, meta_scale, height, left_time, 0.94f, 0.94f, 0.94f);
-        draw_text_line(
-            bar_x + std::max(0, (bar_width - measure_text_width(center_line, meta_scale)) / 2),
-            bar_y + bar_height + 14,
-            meta_scale,
-            height,
-            center_line,
-            0.62f,
-            0.62f,
-            0.62f);
-        draw_text_line(
-            bar_x + std::max(0, bar_width - measure_text_width(right_time, meta_scale)),
-            bar_y + bar_height + 14,
-            meta_scale,
-            height,
-            right_time,
-            0.82f,
-            0.82f,
-            0.82f);
-
-        const int volume_bar_y = bottom_panel_y + bottom_panel_height - 28;
-        const int volume_bar_width = bottom_panel_width / 4;
-        const int volume_bar_x = bottom_panel_x + bottom_panel_width - volume_bar_width - 20;
-        fill_rect(volume_bar_x, volume_bar_y, volume_bar_width, 10, height, 0.16f, 0.16f, 0.16f);
-        fill_rect(
-            volume_bar_x,
-            volume_bar_y,
-            static_cast<int>(std::round(volume_bar_width * clamp_double(last_volume_ / 100.0, 0.0, 1.0))),
-            10,
-            height,
-            0.72f,
-            0.72f,
-            0.72f);
+        // The button hints, dim, along the bottom edge.
+        std::string hints = newpipe::tr("player/osd_controls");
+        if (!chapters_.empty()) {
+            hints += "  " + newpipe::tr("player/chapters/hint");
+        }
+        if (shorts_mode_) {
+            hints += "  " + newpipe::tr("player/shorts/hint");
+        }
+        hints = clamp_text(osd_text(hints), 110);
+        draw_text_line(std::max(side, (width - measure_text_width(hints, meta_scale)) / 2),
+                       row_y + meta_scale * 9 + px(14), meta_scale, height, hints, 0.60f, 0.60f, 0.60f);
     }
 
     bool prepare_stream(std::string& error) {
@@ -985,26 +1413,31 @@ private:
         active_quality_label_ = resolved->quality_label;
         active_audio_language_ = resolved->audio_language;
         active_hls_bitrate_ = resolved->hls_bitrate;
+        active_loudness_lufs_ = resolved->loudness_lufs;
+        captions_ = resolved->captions;
+        original_language_ = resolved->audio_language;
         active_external_audio_url_ = resolved->external_audio_url;
         fallback_url_ = resolved->fallback_stream_url;
         fallback_referer_ = resolved->fallback_referer;
         fallback_http_header_fields_ = resolved->fallback_http_header_fields;
         fallback_quality_label_ = resolved->fallback_quality_label;
         fallback_external_audio_url_ = resolved->fallback_external_audio_url;
+        hls_master_url_ = resolved->hls_master_url;
+        master_retry_done_ = false;
         active_use_ump_ = resolved->use_ump;
         active_is_live_ = resolved->is_live;
         if (!resolved->playlist_body.empty()) {
 #ifdef __SWITCH__
-            active_local_media_path_ = "sdmc:/switch/switch_newpipe_selected.m3u8";
+            active_local_media_path_ = newpipe::app_file_path("selected.m3u8");
 #else
-            active_local_media_path_ = "/tmp/switch_newpipe_selected.m3u8";
+            active_local_media_path_ = "/tmp/ytb_player_selected.m3u8";
 #endif
             std::remove(active_local_media_path_.c_str());
             if (!write_text_file(active_local_media_path_, resolved->playlist_body)) {
                 error = "local HLS playlist write failed";
                 return false;
             }
-            active_url_ = active_local_media_path_;
+            active_url_ = local_playlist_url(active_local_media_path_);
             logf("player: wrote local playlist path=%s bytes=%zu",
                  active_local_media_path_.c_str(),
                  resolved->playlist_body.size());
@@ -1300,9 +1733,9 @@ private:
             newpipe::tr("player/loading/starting_transfer"));
 
 #ifdef __SWITCH__
-        stream_cache_path_ = "sdmc:/switch/switch_newpipe_stream.cache";
+        stream_cache_path_ = newpipe::app_file_path("stream.cache");
 #else
-        stream_cache_path_ = "/tmp/switch_newpipe_stream.cache";
+        stream_cache_path_ = "/tmp/ytb_player_stream.cache";
 #endif
 
         std::remove(stream_cache_path_.c_str());
@@ -1563,9 +1996,9 @@ private:
         }
 
 #ifdef __SWITCH__
-        audio_cache_path_ = "sdmc:/switch/switch_newpipe_audio.cache";
+        audio_cache_path_ = newpipe::app_file_path("audio.cache");
 #else
-        audio_cache_path_ = "/tmp/switch_newpipe_audio.cache";
+        audio_cache_path_ = "/tmp/ytb_player_audio.cache";
 #endif
 
         std::remove(audio_cache_path_.c_str());
@@ -1848,7 +2281,7 @@ private:
             render_loading_screen(phase);
             phase = (phase + 1) % 12;
             SDL_PumpEvents();
-            SDL_Delay(50);
+            SDL_Delay(33);
         }
 
         if (prepare_thread_.joinable()) {
@@ -1875,11 +2308,22 @@ private:
         SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
         SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
+#ifdef __SWITCH__
         const AppletOperationMode mode = appletGetOperationMode();
         int width = mode == AppletOperationMode_Console ? 1920 : 1280;
         int height = mode == AppletOperationMode_Console ? 1080 : 720;
+#else
+        int width = 1280;
+        int height = 720;
+#endif
 
-        window_ = SDL_CreateWindow("Switch-NewPipe Player", 0, 0, width, height, SDL_WINDOW_SHOWN);
+#ifdef __SWITCH__
+        const Uint32 window_flags = SDL_WINDOW_SHOWN;
+#else
+        // Desktop SDL needs to be told the window gets a GL context (the Switch port does not).
+        const Uint32 window_flags = SDL_WINDOW_SHOWN | SDL_WINDOW_OPENGL;
+#endif
+        window_ = SDL_CreateWindow("YTB Player", 0, 0, width, height, window_flags);
         if (!window_) {
             error = std::string("SDL_CreateWindow failed: ") + SDL_GetError();
             return false;
@@ -1923,31 +2367,90 @@ private:
         }
 
         mpv_set_option_string(mpv_, "vo", "libmpv");
-        mpv_set_option_string(mpv_, "hwdec", "auto-safe");
+        // The portlibs FFmpeg is built with the nvtegra (Tegra X1 NVDEC) hwaccel. libmpv has
+        // no GL interop for it, so frames are copied back ("-copy"); when the device cannot
+        // be opened mpv falls back to software decoding by itself. The upstream build had
+        // no hwaccel at all ("auto-safe" found nothing), so every video was decoded on the
+        // 1 GHz CPU cores.
+        const bool hardware_decoding = newpipe::SettingsStore::instance().settings().hardware_decoding;
+        mpv_set_option_string(mpv_, "hwdec", hardware_decoding ? "nvtegra-copy" : "no");
         mpv_set_option_string(mpv_, "profile", "sw-fast");
+        // Keyframe seeks: a precise seek decodes up to a whole HLS segment of frames before
+        // showing anything, which left the picture frozen behind the audio after a skip.
+        mpv_set_option_string(mpv_, "hr-seek", "no");
+        mpv_set_option_string(mpv_, "framedrop", "decoder+vo");
+        if (!hardware_decoding) {
+            mpv_set_option_string(mpv_, "vd-lavc-skiploopfilter", "nonref");
+        }
         mpv_set_option_string(mpv_, "osc", "no");
         mpv_set_option_string(mpv_, "terminal", "no");
         mpv_set_option_string(mpv_, "config", "no");
         mpv_set_option_string(mpv_, "keep-open", "yes");
+        // Otherwise the info bar shows the file name of the trimmed local playlist.
+        if (!request_.title.empty()) {
+            mpv_set_option_string(mpv_, "force-media-title", request_.title.c_str());
+        }
+#ifndef __SWITCH__
+        // The test container has no sound device.
+        if (const char* ao = std::getenv("NEWPIPE_MPV_AO")) {
+            mpv_set_option_string(mpv_, "ao", ao);
+        }
+#endif
+        mpv_set_option_string(mpv_, "speed", format_speed(g_playback_speed).c_str());
+        loop_on_ = !video_id_.empty() && video_id_ == g_loop_video_id;
+        if (loop_on_) {
+            mpv_set_option_string(mpv_, "loop-file", "inf");
+        }
+        if (active_loudness_lufs_.has_value() && *active_loudness_lufs_ > kTargetLoudnessLufs + 0.5) {
+            char gain[32];
+            std::snprintf(gain, sizeof(gain), "%.1f", kTargetLoudnessLufs - *active_loudness_lufs_);
+            if (mpv_set_option_string(mpv_, "volume-gain", gain) < 0) {
+                const std::string filter = std::string("lavfi=[volume=") + gain + "dB]";
+                mpv_set_option_string(mpv_, "af", filter.c_str());
+            }
+            logf("player: loudness %.1f LUFS, gain %s dB", *active_loudness_lufs_, gain);
+        } else if (active_loudness_lufs_.has_value()) {
+            logf("player: loudness %.1f LUFS, no gain needed", *active_loudness_lufs_);
+        }
+        if (resume_from_ > 0.0) {
+            char start[32];
+            std::snprintf(start, sizeof(start), "%.1f", resume_from_);
+            mpv_set_option_string(mpv_, "start", start);
+            logf("player: resume from %.1fs", resume_from_);
+        }
         mpv_set_option_string(mpv_, "force-seekable", "no");
         mpv_set_option_string(mpv_, "ytdl", "no");
         mpv_set_option_string(mpv_, "tls-verify", "no");
         mpv_set_option_string(mpv_, "access-references", "yes");
         if (!active_local_media_path_.empty()) {
+            // Never let mpv's own playlist parser take it: it plays only the first URL of an
+            // "#EXTM3U" file, i.e. the video playlist without its audio rendition.
+            mpv_set_option_string(mpv_, "demuxer", "lavf");
+            mpv_set_option_string(mpv_, "demuxer-lavf-format", "hls");
             mpv_set_option_string(mpv_, "load-unsafe-playlists", "yes");
             mpv_set_option_string(
-                mpv_, "demuxer-lavf-o", "protocol_whitelist=file,http,https,tcp,tls,crypto,data,subfile");
+                mpv_, "demuxer-lavf-o", "protocol_whitelist=[file,http,https,tcp,tls,crypto,data,subfile]");
         }
+        // The whitelist is [bracketed]: mpv splits key/value lists on commas, so the plain
+        // form was rejected as a whole and FFmpeg kept "file,crypto,data" for a local
+        // playlist, refusing its https streams (verified with mpv on a PC).
         const bool is_hls = contains_case_insensitive(active_quality_label_, "hls");
         if (is_hls) {
             const std::string hls_bitrate = active_hls_bitrate_ > 0
                 ? std::to_string(active_hls_bitrate_)
                 : std::string("max");
             mpv_set_option_string(mpv_, "hls-bitrate", hls_bitrate.c_str());
+            // mpv takes the local playlist for a local file and reads only 1 s ahead, too little
+            // over Wi-Fi; the network default (150 MiB) is too much for the Switch. 30 s ahead,
+            // and 16 MiB behind so that short skips back play from memory.
+            mpv_set_option_string(mpv_, "cache", "yes");
+            mpv_set_option_string(mpv_, "cache-secs", "30");
+            mpv_set_option_string(mpv_, "demuxer-max-bytes", "32MiB");
+            mpv_set_option_string(mpv_, "demuxer-max-back-bytes", "16MiB");
             mpv_set_option_string(mpv_, "load-unsafe-playlists", "yes");
             mpv_set_option_string(
                 mpv_, "demuxer-lavf-o",
-                "protocol_whitelist=file,http,https,tcp,tls,crypto,data,subfile");
+                "protocol_whitelist=[file,http,https,tcp,tls,crypto,data,subfile]");
             // The visionOS HLS master offers original + AI-dubbed audio with no
             // DEFAULT; prefer the original language so mpv doesn't pick the dub.
             if (!active_audio_language_.empty()) {
@@ -1960,7 +2463,9 @@ private:
                 mpv_, "demuxer-lavf-o", "protocol_whitelist=file,http,https,tcp,tls,crypto,data,switchcache");
         }
         // Use Android UA for YouTube CDN to avoid rejection
-        const bool is_youtube_stream = contains_case_insensitive(active_url_, "googlevideo.com")
+        // The trimmed local playlist points at googlevideo too: same agent as the full master.
+        const bool is_youtube_stream = !active_local_media_path_.empty()
+            || contains_case_insensitive(active_url_, "googlevideo.com")
             || contains_case_insensitive(active_url_, "youtube.com");
         mpv_set_option_string(mpv_, "user-agent",
             is_youtube_stream ? kDownloadUserAgent : kUserAgent);
@@ -1981,7 +2486,9 @@ private:
             return false;
         }
 
-        mpv_request_log_messages(mpv_, "warn");
+        // info adds the decoder choice ("Using hardware decoding ...") and track selection
+        // without the per-segment chatter.
+        mpv_request_log_messages(mpv_, "info");
         mpv_set_wakeup_callback(mpv_, &SwitchPlayer::on_mpv_wakeup, this);
 
         mpv_opengl_init_params gl_init{};
@@ -2099,6 +2606,25 @@ private:
     }
 
     bool retry_with_fallback(std::string& error) {
+        // The trimmed local playlist failed to open: retry the full master (same streams,
+        // slower to open) before dropping to the slower fallback stream.
+        if (!master_retry_done_ && !hls_master_url_.empty() && !active_local_media_path_.empty()) {
+            master_retry_done_ = true;
+            log_line("player: trimmed HLS playlist failed, retrying the full master");
+            destroy_mpv();
+            std::remove(active_local_media_path_.c_str());
+            active_local_media_path_.clear();
+            active_url_ = hls_master_url_;
+            if (!init_mpv(error) || !load_file(error)) {
+                return false;
+            }
+            first_frame_rendered_ = false;
+            file_loaded_ = false;
+            terminal_error_.clear();
+            mpv_events_pending_.store(true);
+            render_update_pending_.store(true);
+            return true;
+        }
         if (fallback_attempted_ || fallback_url_.empty()) {
             return false;
         }
@@ -2163,13 +2689,60 @@ private:
             while (SDL_PollEvent(&event)) {
                 if (event.type == SDL_QUIT) {
                     running = false;
+#ifndef __SWITCH__
+                } else if (event.type == SDL_KEYDOWN && !event.key.repeat) {
+                    handle_key(event.key.keysym.sym, running, paused, force_redraw);
+#endif
                 } else if (event.type == SDL_CONTROLLERBUTTONDOWN) {
                     handle_controller_button(event.cbutton.button, running, paused, force_redraw);
+                } else if (event.type == SDL_CONTROLLERAXISMOTION) {
+                    handle_trigger(event.caxis.axis, event.caxis.value, force_redraw);
+                } else if (event.type == SDL_FINGERDOWN || event.type == SDL_FINGERMOTION || event.type == SDL_FINGERUP) {
+                    // The first finger down is followed until it lifts; others are ignored.
+                    if (event.type == SDL_FINGERDOWN && !touch_down_) {
+                        touch_finger_ = event.tfinger.fingerId;
+                    } else if (event.tfinger.fingerId != touch_finger_) {
+                        continue;
+                    }
+                    int width = 0;
+                    int height = 0;
+                    SDL_GL_GetDrawableSize(window_, &width, &height);
+                    handle_touch(event.type == SDL_FINGERDOWN ? TouchPhase::down
+                                 : event.type == SDL_FINGERUP ? TouchPhase::up
+                                                              : TouchPhase::move,
+                                 static_cast<int>(event.tfinger.x * width), static_cast<int>(event.tfinger.y * height),
+                                 paused, force_redraw);
+                } else if ((event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_MOUSEBUTTONUP)
+                           && event.button.which != SDL_TOUCH_MOUSEID && event.button.button == SDL_BUTTON_LEFT) {
+                    // A real mouse (desktop tests); SDL's copies of touches are left out.
+                    const auto [x, y] = window_to_drawable(event.button.x, event.button.y);
+                    handle_touch(event.type == SDL_MOUSEBUTTONDOWN ? TouchPhase::down : TouchPhase::up, x, y, paused,
+                                 force_redraw);
+                } else if (event.type == SDL_MOUSEMOTION && event.motion.which != SDL_TOUCH_MOUSEID
+                           && (event.motion.state & SDL_BUTTON_LMASK)) {
+                    const auto [x, y] = window_to_drawable(event.motion.x, event.motion.y);
+                    handle_touch(TouchPhase::move, x, y, paused, force_redraw);
                 } else if (!has_game_controller_ && event.type == SDL_JOYBUTTONDOWN) {
                     handle_joy_button(event.jbutton.button, running, paused, force_redraw);
                 } else if (!has_game_controller_ && event.type == SDL_JOYHATMOTION) {
                     handle_hat(event.jhat.value, force_redraw);
                 }
+            }
+
+            update_shorts(running, force_redraw);
+            if (restart_requested_) {
+                restart_requested_ = false;
+                reopening_ = true;
+                queue_playback(request_);
+                running = false;
+            }
+            if (first_frame_rendered_) {
+                update_held_seek(force_redraw);
+                log_playback_health();
+                update_autoplay(running, force_redraw);
+                update_sponsor_skip(force_redraw);
+                announce_subtitles(force_redraw);
+                take_chapters(force_redraw);
             }
 
             if (mpv_events_pending_.exchange(false) && !drain_mpv_events()) {
@@ -2224,20 +2797,29 @@ private:
                 if (frame_ready) {
                     render_frame();
                     first_frame_rendered_ = true;
+                    if (char* hwdec = mpv_get_property_string(mpv_, "hwdec-current")) {
+                        logf("player: hwdec-current=%s", hwdec);
+                        mpv_free(hwdec);
+                    }
                     refresh_osd_snapshot(true);
-                    show_osd_message(newpipe::tr("player/osd/playback_ready"), 3500);
+                    if (resume_from_ > 0.0) {
+                        show_osd_message(
+                            newpipe::tr("player/osd/resumed", format_playback_time(resume_from_)), 5000);
+                    } else {
+                        show_osd_message(newpipe::tr("player/osd/playback_ready"), 3500);
+                    }
                     force_redraw = paused;
                     set_loading_status(
                         newpipe::tr("player/loading/playback_started"),
                         active_quality_label_.empty()
                             ? newpipe::tr("player/loading/video_frame_ready")
-                            : clamp_text(uppercase_ascii(active_quality_label_), 40));
+                            : clamp_text(osd_text(active_quality_label_), 40));
                     continue;
                 }
 
                 render_loading_screen(loading_phase);
                 loading_phase = (loading_phase + 1) % 12;
-                SDL_Delay(50);
+                SDL_Delay(33);
                 continue;
             }
 
@@ -2264,22 +2846,59 @@ private:
             return;
         }
         logf("player: controller button=%u", static_cast<unsigned int>(button));
+        if (menu_open()) {
+            switch (button) {
+                case SDL_CONTROLLER_BUTTON_DPAD_UP:
+                    menu_key(MenuKey::up, force_redraw);
+                    break;
+                case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
+                    menu_key(MenuKey::down, force_redraw);
+                    break;
+                case SDL_CONTROLLER_BUTTON_B:  // physical A
+                    menu_key(MenuKey::pick, force_redraw);
+                    break;
+                case SDL_CONTROLLER_BUTTON_A:  // physical B
+                case SDL_CONTROLLER_BUTTON_START:
+                    menu_key(MenuKey::close, force_redraw);
+                    break;
+                default:
+                    break;
+            }
+            return;
+        }
         switch (button) {
             case SDL_CONTROLLER_BUTTON_A:
-                running = false;
+                if (!cancel_autoplay(force_redraw)) {
+                    running = false;
+                }
                 break;
             case SDL_CONTROLLER_BUTTON_B:
-                toggle_pause(paused, force_redraw);
+                if (!autoplay_counting_down()) {
+                    toggle_pause(paused, force_redraw);
+                } else {
+                    autoplay_now_ = true;
+                }
                 break;
+            // SDL names the Switch buttons by position: SDL X is the physical Y button.
             case SDL_CONTROLLER_BUTTON_X:
+                cycle_speed(force_redraw);
+                break;
             case SDL_CONTROLLER_BUTTON_Y:
                 toggle_osd(force_redraw);
                 break;
             case SDL_CONTROLLER_BUTTON_DPAD_UP:
-                change_volume(5, force_redraw);
+                if (shorts_mode_) {
+                    shorts_step_ = -1;
+                } else {
+                    change_volume(5, force_redraw);
+                }
                 break;
             case SDL_CONTROLLER_BUTTON_DPAD_DOWN:
-                change_volume(-5, force_redraw);
+                if (shorts_mode_) {
+                    shorts_step_ = 1;
+                } else {
+                    change_volume(-5, force_redraw);
+                }
                 break;
             case SDL_CONTROLLER_BUTTON_DPAD_LEFT:
                 seek_relative(-kShortSeekSeconds, force_redraw);
@@ -2293,10 +2912,264 @@ private:
             case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER:
                 seek_relative(kLongSeekSeconds, force_redraw);
                 break;
+            case SDL_CONTROLLER_BUTTON_BACK:  // "-"
+                restart_from_beginning(force_redraw);
+                break;
+            case SDL_CONTROLLER_BUTTON_START:  // "+"
+                open_settings_menu(force_redraw);
+                break;
             default:
                 break;
         }
     }
+
+    // ZR opens (and closes) the chapter list. SDL's game controller API reports ZL/ZR as
+    // trigger axes; a press is the value going past the middle.
+    void handle_trigger(Uint8 axis, Sint16 value, bool& force_redraw) {
+        if (axis != SDL_CONTROLLER_AXIS_TRIGGERRIGHT) {
+            return;
+        }
+        const bool pressed = value > 16000;
+        if (pressed && !zr_held_ && std::chrono::steady_clock::now() >= player_input_ready_at_) {
+            toggle_chapter_menu(force_redraw);
+        }
+        zr_held_ = pressed;
+    }
+
+    // ---- touch: one finger at a time. A press on the progress bar drags the seek target (the
+    // bar and the clock preview it) and seeks on release; any other press acts on release, as
+    // a tap, when the finger stayed put. The desktop build feeds the mouse in here.
+    enum class TouchPhase { down, move, up };
+
+    void handle_touch(TouchPhase phase, int x, int y, bool& paused, bool& force_redraw) {
+        if (!first_frame_rendered_ || std::chrono::steady_clock::now() < player_input_ready_at_) {
+            touch_down_ = false;
+            return;
+        }
+        if (phase == TouchPhase::down) {
+            touch_down_ = true;
+            touch_start_x_ = x;
+            touch_start_y_ = y;
+            // A finger is thicker than the bar: some room above and below it counts.
+            const ScreenRect bar{osd_bar_rect_.x, osd_bar_rect_.y - 24, osd_bar_rect_.w, osd_bar_rect_.h + 48};
+            touch_on_bar_ = !menu_open() && !autoplay_counting_down() && bar.contains(x, y) && is_media_seekable();
+            if (touch_on_bar_) {
+                touch_scrub(x, force_redraw);
+            }
+            return;
+        }
+        if (!touch_down_) {
+            return;
+        }
+        if (phase == TouchPhase::move) {
+            if (touch_on_bar_) {
+                touch_scrub(x, force_redraw);
+            }
+            return;
+        }
+        touch_down_ = false;
+        if (touch_on_bar_) {
+            touch_on_bar_ = false;
+            const double target = scrub_target_;
+            scrub_target_ = -1.0;
+            if (target >= 0.0) {
+                logf("player: touch seek to %.1f", target);
+                seek_relative(target - last_time_pos_, force_redraw);
+            }
+            return;
+        }
+        const int moved_y = y - touch_start_y_;
+        if (shorts_mode_ && !menu_open() && std::abs(moved_y) >= kShortsSwipePixels
+            && std::abs(moved_y) > std::abs(x - touch_start_x_)) {
+            shorts_step_ = moved_y < 0 ? 1 : -1;  // the finger pushes the next one up
+            return;
+        }
+        if (std::abs(x - touch_start_x_) <= 30 && std::abs(y - touch_start_y_) <= 30) {
+            handle_tap(x, y, paused, force_redraw);
+        }
+    }
+
+    // Window coordinates (mouse events) in the drawable's pixels, which the layout uses.
+    std::pair<int, int> window_to_drawable(int x, int y) const {
+        int window_width = 0;
+        int window_height = 0;
+        int drawable_width = 0;
+        int drawable_height = 0;
+        SDL_GetWindowSize(window_, &window_width, &window_height);
+        SDL_GL_GetDrawableSize(window_, &drawable_width, &drawable_height);
+        if (window_width <= 0 || window_height <= 0) {
+            return {x, y};
+        }
+        return {x * drawable_width / window_width, y * drawable_height / window_height};
+    }
+
+    void touch_scrub(int x, bool& force_redraw) {
+        const double fraction =
+            clamp_double((x - osd_bar_rect_.x) / static_cast<double>(std::max(1, osd_bar_rect_.w)), 0.0, 1.0);
+        scrub_target_ = fraction * std::max(0.0, last_duration_ - 1.0);
+        reveal_osd(3000);
+        force_redraw = true;
+    }
+
+    // Shows the info bar for a while, with the usual status line.
+    void reveal_osd(int duration_ms) {
+        osd_message_.clear();
+        osd_visible_until_ = std::chrono::steady_clock::now() + std::chrono::milliseconds(duration_ms);
+    }
+
+    void handle_tap(int x, int y, bool& paused, bool& force_redraw) {
+        force_redraw = true;
+        if (menu_open()) {
+            if (menu_rows_rect_.contains(x, y)) {
+                menu_selected_ = menu_first_row_ + (y - menu_rows_rect_.y) / std::max(1, menu_row_height_);
+                menu_key(MenuKey::pick, force_redraw);
+            } else if (!menu_rect_.contains(x, y)) {
+                menu_key(MenuKey::close, force_redraw);
+            }
+            return;
+        }
+        if (autoplay_counting_down()) {
+            if (autoplay_rect_.contains(x, y)) {
+                autoplay_now_ = true;
+            }
+            return;
+        }
+        if (round_button_rect_.contains(x, y)) {
+            toggle_pause(paused, force_redraw);
+            return;
+        }
+        if (settings_button_rect_.contains(x, y)) {
+            open_settings_menu(force_redraw);
+            return;
+        }
+        if (osd_top_rect_.contains(x, y) || osd_bottom_rect_.contains(x, y)) {
+            reveal_osd(4000);  // keeps the bar up while it is used
+            return;
+        }
+        // Elsewhere a tap shows the info bar, or hides it when it is up (while paused it stays).
+        if (osd_bottom_rect_.w > 0) {
+            osd_pinned_ = false;
+            osd_visible_until_ = {};
+        } else {
+            reveal_osd(4000);
+        }
+    }
+
+    // The progress bar's knob, made once per player.
+    unsigned int knob_texture() {
+        if (!knob_texture_) {
+            constexpr int kSize = 64;
+            const auto coverage = make_disc_mask(kSize);
+            knob_texture_ = osd_font_.create_mask(coverage.data(), kSize, kSize);
+        }
+        return knob_texture_;
+    }
+
+    // The round button's two faces, made once per player.
+    unsigned int round_button_texture(bool pause) {
+        unsigned int& texture = pause ? pause_button_texture_ : play_button_texture_;
+        if (!texture) {
+            constexpr int kSize = 128;
+            const auto pixels = make_round_button(kSize, pause);
+            texture = osd_font_.create_image(pixels.data(), kSize, kSize);
+        }
+        return texture;
+    }
+
+#ifndef __SWITCH__
+    // Desktop build (screenshot tests): Escape exits, Space pauses, arrows seek (10 s) and
+    // change the volume, q/e seek 60 s, x = info bar, y = speed, m = back to the start,
+    // s = subtitle list, c = chapter list, o = settings list ("+").
+    void handle_key(SDL_Keycode key, bool& running, bool& paused, bool& force_redraw) {
+        if (std::chrono::steady_clock::now() < player_input_ready_at_) {
+            return;
+        }
+        logf("player: key=%d", static_cast<int>(key));
+        if (menu_open()) {
+            switch (key) {
+                case SDLK_UP:
+                    menu_key(MenuKey::up, force_redraw);
+                    break;
+                case SDLK_DOWN:
+                    menu_key(MenuKey::down, force_redraw);
+                    break;
+                case SDLK_RETURN:
+                case SDLK_SPACE:
+                    menu_key(MenuKey::pick, force_redraw);
+                    break;
+                case SDLK_ESCAPE:
+                case SDLK_s:
+                case SDLK_c:
+                case SDLK_o:
+                    menu_key(MenuKey::close, force_redraw);
+                    break;
+                default:
+                    break;
+            }
+            return;
+        }
+        switch (key) {
+            case SDLK_ESCAPE:
+                if (!cancel_autoplay(force_redraw)) {
+                    running = false;
+                }
+                break;
+            case SDLK_SPACE:
+                if (autoplay_counting_down()) {
+                    autoplay_now_ = true;
+                } else if (first_frame_rendered_) {
+                    toggle_pause(paused, force_redraw);
+                }
+                break;
+            case SDLK_LEFT:
+                seek_relative(-kShortSeekSeconds, force_redraw);
+                break;
+            case SDLK_RIGHT:
+                seek_relative(kShortSeekSeconds, force_redraw);
+                break;
+            case SDLK_UP:
+                if (shorts_mode_) {
+                    shorts_step_ = -1;
+                } else {
+                    change_volume(5, force_redraw);
+                }
+                break;
+            case SDLK_DOWN:
+                if (shorts_mode_) {
+                    shorts_step_ = 1;
+                } else {
+                    change_volume(-5, force_redraw);
+                }
+                break;
+            case SDLK_q:
+                seek_relative(-kLongSeekSeconds, force_redraw);
+                break;
+            case SDLK_e:
+                seek_relative(kLongSeekSeconds, force_redraw);
+                break;
+            case SDLK_x:
+                toggle_osd(force_redraw);
+                break;
+            case SDLK_y:
+                cycle_speed(force_redraw);
+                break;
+            case SDLK_m:
+                restart_from_beginning(force_redraw);
+                break;
+            case SDLK_o:
+                open_settings_menu(force_redraw);
+                break;
+            case SDLK_s:
+                open_subtitle_menu(force_redraw);
+                break;
+            case SDLK_c:
+                toggle_chapter_menu(force_redraw);
+                break;
+            default:
+                break;
+        }
+    }
+#endif
 
     void handle_joy_button(Uint8 button, bool& running, bool& paused, bool& force_redraw) {
         if (std::chrono::steady_clock::now() < player_input_ready_at_) {
@@ -2308,16 +3181,45 @@ private:
             return;
         }
         logf("player: joystick button=%u", static_cast<unsigned int>(button));
+        if (menu_open()) {
+            switch (button) {
+                case 13:
+                    menu_key(MenuKey::up, force_redraw);
+                    break;
+                case 15:
+                    menu_key(MenuKey::down, force_redraw);
+                    break;
+                case 1:  // the pause button
+                    menu_key(MenuKey::pick, force_redraw);
+                    break;
+                case 0:  // the back button
+                case 9:  // ZR
+                case 10:
+                    menu_key(MenuKey::close, force_redraw);
+                    break;
+                default:
+                    break;
+            }
+            return;
+        }
         switch (button) {
             case 0:
-                running = false;
+                if (!cancel_autoplay(force_redraw)) {
+                    running = false;
+                }
                 break;
             case 1:
-                toggle_pause(paused, force_redraw);
+                if (!autoplay_counting_down()) {
+                    toggle_pause(paused, force_redraw);
+                } else {
+                    autoplay_now_ = true;
+                }
                 break;
             case 2:
-            case 3:
                 toggle_osd(force_redraw);
+                break;
+            case 3:
+                cycle_speed(force_redraw);
                 break;
             case 13:
                 change_volume(5, force_redraw);
@@ -2338,9 +3240,1146 @@ private:
             case 7:
                 seek_relative(kLongSeekSeconds, force_redraw);
                 break;
+            case 11:  // "-"
+                restart_from_beginning(force_redraw);
+                break;
+            case 10:  // "+"
+                open_subtitle_menu(force_redraw);
+                break;
+            case 9:  // ZR
+                toggle_chapter_menu(force_redraw);
+                break;
             default:
                 break;
         }
+    }
+
+    // SDL reports one button-down per press. Holding left/right (or L/R) keeps seeking, with
+    // bigger steps the longer it is held: 10 s steps, then 30 s, then 60 s (L/R: 60/180/360 s),
+    // so the end of a long video is a few seconds away instead of dozens of presses.
+    void update_held_seek(bool& force_redraw) {
+        if (touch_on_bar_) {
+            return;  // a finger drags the seek target; it seeks when lifted
+        }
+        int direction = 0;
+        bool shoulder = false;
+        for (auto* controller : game_controllers_) {
+            if (SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_DPAD_RIGHT)) {
+                direction = 1;
+            } else if (SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_DPAD_LEFT)) {
+                direction = -1;
+            } else if (SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)) {
+                direction = 1;
+                shoulder = true;
+            } else if (SDL_GameControllerGetButton(controller, SDL_CONTROLLER_BUTTON_LEFTSHOULDER)) {
+                direction = -1;
+                shoulder = true;
+            }
+            if (direction != 0) {
+                break;
+            }
+        }
+        if (direction == 0 && !has_game_controller_) {
+            for (auto* joystick : joysticks_) {
+                // HidNpadButton bit order: 6 L, 7 R, 12 Left, 14 Right.
+                if (SDL_JoystickGetButton(joystick, 14)) {
+                    direction = 1;
+                } else if (SDL_JoystickGetButton(joystick, 12)) {
+                    direction = -1;
+                } else if (SDL_JoystickGetButton(joystick, 7)) {
+                    direction = 1;
+                    shoulder = true;
+                } else if (SDL_JoystickGetButton(joystick, 6)) {
+                    direction = -1;
+                    shoulder = true;
+                }
+                if (direction != 0) {
+                    break;
+                }
+            }
+        }
+
+        if (menu_open()) {
+            direction = 0;  // the list takes the direction buttons
+        }
+        const auto now = std::chrono::steady_clock::now();
+        if (direction == 0 || direction != held_seek_direction_ || shoulder != held_seek_shoulder_) {
+            // Released (or changed direction) after scrubbing: seek once to the target.
+            if (scrub_target_ >= 0.0) {
+                const double target = scrub_target_;
+                scrub_target_ = -1.0;
+                seek_relative(target - last_time_pos_, force_redraw);
+            }
+            // A new press already seeked once through its button-down event.
+            held_seek_direction_ = direction;
+            held_seek_shoulder_ = shoulder;
+            held_seek_since_ = now;
+            held_seek_last_ = now;
+            return;
+        }
+        const auto held = now - held_seek_since_;
+        if (held < std::chrono::milliseconds(450) || now - held_seek_last_ < std::chrono::milliseconds(200)) {
+            return;
+        }
+        held_seek_last_ = now;
+        double step = shoulder ? kLongSeekSeconds : kShortSeekSeconds;
+        if (held > std::chrono::milliseconds(1500)) {
+            step *= 3.0;
+        }
+        if (held > std::chrono::milliseconds(3500)) {
+            step *= 2.0;
+        }
+        // Scrub: only the target moves while the button is held. Seeking on every tick
+        // queued one network seek per 200 ms, which stalled the picture for a long time.
+        const double start = scrub_target_ >= 0.0 ? scrub_target_ : last_time_pos_;
+        scrub_target_ = clamp_double(start + direction * step, 0.0, std::max(0.0, last_duration_ - 1.0));
+        show_osd_message(
+            newpipe::tr(
+                "player/osd/seek",
+                format_playback_time(scrub_target_),
+                format_playback_time(last_duration_)),
+            1500);
+        force_redraw = true;
+    }
+
+    // Whether the decoder keeps up (drops, fps, avsync) and whether playback waits for the
+    // network (wait, buf). Once a second for a while after a seek, otherwise every 30 s.
+    void log_playback_health() {
+        const auto now = std::chrono::steady_clock::now();
+        const bool after_seek = now < seek_diag_until_;
+        if (now - last_health_log_ < (after_seek ? std::chrono::seconds(1) : std::chrono::seconds(30))) {
+            return;
+        }
+        last_health_log_ = now;
+        auto text = [this](const char* name) {
+            std::string value = get_mpv_property_text(name);
+            return value.empty() ? std::string("-") : value;
+        };
+        logf("player: health pos=%s avsync=%s drop=%s/%s fps=%s wait=%s buf=%s codec=%s pause=%s eof=%s seeking=%s",
+             text("time-pos").c_str(),
+             text("avsync").c_str(),
+             text("decoder-frame-drop-count").c_str(),
+             text("frame-drop-count").c_str(),
+             text("estimated-vf-fps").c_str(),
+             text("paused-for-cache").c_str(),
+             text("demuxer-cache-duration").c_str(),
+             text("video-format").c_str(),
+             text("pause").c_str(),
+             text("eof-reached").c_str(),
+             text("seeking").c_str());
+    }
+
+    // "-": back to the start, e.g. after a resume the viewer did not want.
+    void restart_from_beginning(bool& force_redraw) {
+        seek_relative(-(last_duration_ + 60.0), force_redraw);
+    }
+
+    // Where the viewer stopped, for the next open and the card bar (WatchProgressStore).
+    void save_watch_progress() {
+        if (video_id_.empty() || active_is_live_ || !mpv_ || !first_frame_rendered_) {
+            return;
+        }
+        double position = last_time_pos_;
+        double duration = last_duration_;
+        double value = 0.0;
+        if (mpv_get_property(mpv_, "time-pos", MPV_FORMAT_DOUBLE, &value) >= 0 && std::isfinite(value)) {
+            position = value;
+        }
+        if (mpv_get_property(mpv_, "duration", MPV_FORMAT_DOUBLE, &value) >= 0 && std::isfinite(value)) {
+            duration = value;
+        }
+        int eof = 0;
+        if (mpv_get_property(mpv_, "eof-reached", MPV_FORMAT_FLAG, &eof) >= 0 && eof) {
+            position = duration;
+        }
+        WatchProgressStore::instance().save(video_id_, position, duration);
+        logf("player: progress video=%s pos=%.1f dur=%.1f", video_id_.c_str(), position, duration);
+    }
+
+    // ---- autoplay: in the last minute a worker picks the next video (the next item of the
+    // playlist, else the first related video not watched to the end); at the end of the file a
+    // countdown runs, then the player queues that video and closes, and main starts it at once.
+    bool autoplay_counting_down() const {
+        return autoplay_countdown_start_ != std::chrono::steady_clock::time_point{};
+    }
+
+    // Returns true when a countdown was running (and is now cancelled).
+    bool cancel_autoplay(bool& force_redraw) {
+        if (!autoplay_counting_down()) {
+            return false;
+        }
+        autoplay_countdown_start_ = {};
+        autoplay_cancelled_ = true;
+        show_osd_message(newpipe::tr("player/autoplay/cancelled"), 2500);
+        log_line("player: autoplay cancelled");
+        force_redraw = true;
+        return true;
+    }
+
+    // ---- Shorts (see ShortsQueue).
+    void begin_shorts() {
+        shorts_mode_ = true;
+        ShortsQueue& queue = shorts_queue();
+        const bool continuing = queue.index < queue.items.size() && queue.items[queue.index].id == video_id_;
+        if (!continuing) {
+            queue = {};
+            StreamItem current;
+            current.id = video_id_;
+            current.url = request_.url;
+            current.title = request_.title;
+            queue.items.push_back(current);
+            queue.more = request_.reel_sequence;
+        }
+        logf("player: shorts %zu/%zu more=%d", queue.index + 1, queue.items.size(), queue.more.empty() ? 0 : 1);
+        // The Shorts from YouTube's sequence come without titles: "Shorts" until it is known
+        // (mpv would name the stream's file).
+        if (request_.title.empty()) {
+            request_.title = "Shorts";
+            osd_title_ = request_.title;
+            start_shorts_title_fetch();
+        }
+        start_shorts_fetch();
+    }
+
+    // The next Shorts once the list is down to its last three.
+    void start_shorts_fetch() {
+        const ShortsQueue& queue = shorts_queue();
+        if (shorts_fetch_ || queue.more.empty() || queue.index + 3 < queue.items.size()) {
+            return;
+        }
+        shorts_fetch_ = std::make_shared<ShortsFetchState>();
+        std::shared_ptr<ShortsFetchState> state = shorts_fetch_;
+        const std::string params = queue.more;
+        const std::atomic<bool>* abort = &background_abort_;
+        start_background("shorts", [state, params, abort]() {
+            HttpsHttpClient client;
+            client.set_abort_flag(abort);
+            YouTubeCatalogService service(&client);
+            const auto page = service.get_shorts_sequence(params);
+            std::lock_guard<std::mutex> lock(state->mutex);
+            if (page.has_value()) {
+                state->items = page->items;
+                state->more = page->next_page_token;
+            }
+            state->done = true;
+        });
+    }
+
+    void start_shorts_title_fetch() {
+        shorts_title_ = std::make_shared<ShortsFetchState>();
+        std::shared_ptr<ShortsFetchState> state = shorts_title_;
+        // The watch page's details; a Short's own page is laid out differently.
+        const std::string url = "https://www.youtube.com/watch?v=" + video_id_;
+        const std::atomic<bool>* abort = &background_abort_;
+        start_background("shorts title", [state, url, abort]() {
+            HttpsHttpClient client;
+            client.set_abort_flag(abort);
+            YouTubeCatalogService service(&client);
+            const auto detail = service.get_stream_detail(url);
+            std::lock_guard<std::mutex> lock(state->mutex);
+            if (detail.has_value()) {
+                state->title = detail->item.title;
+            }
+            state->done = true;
+        });
+    }
+
+    void update_shorts(bool& running, bool& force_redraw) {
+        if (!shorts_mode_) {
+            return;
+        }
+        ShortsQueue& queue = shorts_queue();
+        // Shorts that came in join the list, without repeats; a failed request ends it.
+        if (const std::shared_ptr<ShortsFetchState> state = shorts_fetch_) {
+            std::unique_lock<std::mutex> lock(state->mutex);
+            if (state->done) {
+                size_t added = 0;
+                for (auto& item : state->items) {
+                    const bool known = std::any_of(queue.items.begin(), queue.items.end(),
+                                                   [&item](const StreamItem& other) { return other.id == item.id; });
+                    if (!known) {
+                        queue.items.push_back(std::move(item));
+                        added++;
+                    }
+                }
+                queue.more = added > 0 ? state->more : std::string();
+                logf("player: shorts added=%zu total=%zu more=%d", added, queue.items.size(),
+                     queue.more.empty() ? 0 : 1);
+                lock.unlock();
+                shorts_fetch_.reset();
+            }
+        }
+        if (const std::shared_ptr<ShortsFetchState> state = shorts_title_) {
+            std::unique_lock<std::mutex> lock(state->mutex);
+            if (state->done) {
+                if (!state->title.empty()) {
+                    request_.title = state->title;
+                    osd_title_ = clamp_text(osd_text(state->title), 52);
+                    if (mpv_) {
+                        mpv_set_property_string(mpv_, "force-media-title", state->title.c_str());
+                    }
+                    if (queue.index < queue.items.size()) {
+                        queue.items[queue.index].title = state->title;
+                    }
+                    force_redraw = true;
+                }
+                lock.unlock();
+                shorts_title_.reset();
+            }
+        }
+        // The end of a Short starts the next one.
+        int eof = 0;
+        if (first_frame_rendered_ && mpv_ && !shorts_ended_
+            && mpv_get_property(mpv_, "eof-reached", MPV_FORMAT_FLAG, &eof) >= 0 && eof) {
+            shorts_ended_ = true;
+            shorts_step_ = 1;
+        }
+        if (shorts_waiting_ && !shorts_fetch_) {
+            shorts_waiting_ = false;
+            shorts_step_ = 1;
+        }
+        const int step = shorts_step_;
+        shorts_step_ = 0;
+        if (step == 0) {
+            return;
+        }
+        if (step < 0) {
+            if (queue.index == 0) {
+                return;
+            }
+            queue.index--;
+        } else if (queue.index + 1 < queue.items.size()) {
+            queue.index++;
+        } else {
+            // The list ran out: go on once the next ones are here, if YouTube has more.
+            start_shorts_fetch();
+            if (shorts_fetch_) {
+                shorts_waiting_ = true;
+                show_osd_message(newpipe::tr("player/shorts/next_loading"));
+                force_redraw = true;
+            }
+            return;
+        }
+        const StreamItem next = queue.items[queue.index];
+        const auto request = build_playback_request(next, std::nullopt);
+        if (!request.has_value()) {
+            return;
+        }
+        std::string ignored_error;
+        LibraryStore::instance().add_history(next, &ignored_error);
+        queue_playback(*request);
+        logf("player: shorts step %d to %zu/%zu id=%s", step, queue.index + 1, queue.items.size(), next.id.c_str());
+        running = false;
+    }
+
+    // The thumbnail behind the loading screen: hq720 (1280x720) when the video has one, else
+    // hqdefault (480x360) without its black bars.
+    void start_loading_picture_fetch() {
+        const auto id = YouTubeResolver::extract_video_id(request_.url);
+        if (!id) {
+            return;
+        }
+        loading_picture_ = std::make_shared<LoadingPictureState>();
+        std::shared_ptr<LoadingPictureState> state = loading_picture_;
+        const std::string video_id = *id;
+        const std::atomic<bool>* abort = &background_abort_;
+        start_background("loading picture", [state, video_id, abort]() {
+            HttpsHttpClient client;
+            client.set_abort_flag(abort);
+            std::vector<unsigned char> pixels;
+            int width = 0;
+            int height = 0;
+            for (const char* name : {"hq720.jpg", "hqdefault.jpg"}) {
+                if (const auto body = client.get("https://i.ytimg.com/vi/" + video_id + "/" + name)) {
+                    pixels = decode_picture(*body, width, height);
+                }
+                if (!pixels.empty()) {
+                    break;
+                }
+            }
+            if (!pixels.empty() && width * 3 == height * 4) {
+                const int shown = width * 9 / 16;
+                const size_t top = static_cast<size_t>((height - shown) / 2) * width * 4;
+                pixels.erase(pixels.begin(), pixels.begin() + static_cast<std::ptrdiff_t>(top));
+                pixels.resize(static_cast<size_t>(shown) * width * 4);
+                height = shown;
+            }
+            logf("player: loading picture %dx%d", width, height);
+            std::lock_guard<std::mutex> lock(state->mutex);
+            state->pixels = std::move(pixels);
+            state->width = width;
+            state->height = height;
+        });
+    }
+
+    void start_next_fetch() {
+        if (next_state_ || video_id_.empty()) {
+            return;
+        }
+        next_state_ = std::make_shared<NextVideoState>();
+        std::shared_ptr<NextVideoState> state = next_state_;
+        StreamItem current;
+        current.id = video_id_;
+        current.url = request_.url;
+        current.title = request_.title;
+        log_line("player: autoplay looking for the next video");
+        const std::atomic<bool>* abort = &background_abort_;
+        start_background("next video", [state, current, abort]() {
+            HttpsHttpClient client;
+            client.set_abort_flag(abort);
+            YouTubeCatalogService service(&client);
+            std::optional<StreamItem> pick;
+            if (current.url.find("list=") != std::string::npos) {
+                if (const auto feed = service.get_playlist_feed(current)) {
+                    for (size_t i = 0; i + 1 < feed->items.size(); i++) {
+                        if (YouTubeResolver::extract_video_id(feed->items[i].url) == current.id) {
+                            pick = feed->items[i + 1];
+                            break;
+                        }
+                    }
+                }
+            }
+            if (!pick.has_value()) {
+                if (const auto feed = service.get_related_feed(current)) {
+                    for (const auto& item : feed->items) {
+                        const auto id = YouTubeResolver::extract_video_id(item.url);
+                        if (!id || *id == current.id || item.is_live
+                            || WatchProgressStore::instance().watched_fraction(item) >= 1.0f) {
+                            continue;
+                        }
+                        pick = item;
+                        break;
+                    }
+                }
+            }
+            std::vector<unsigned char> thumbnail;
+            int thumbnail_width = 0;
+            int thumbnail_height = 0;
+            if (pick.has_value()) {
+                // mqdefault is 320x180, without the black bars of hqdefault.
+                const auto id = YouTubeResolver::extract_video_id(pick->url);
+                const std::string url = id ? "https://i.ytimg.com/vi/" + *id + "/mqdefault.jpg" : pick->thumbnail_url;
+                if (!url.empty()) {
+                    if (const auto body = client.get(url)) {
+                        thumbnail = decode_picture(*body, thumbnail_width, thumbnail_height);
+                    }
+                }
+            }
+            logf("player: autoplay next=%s thumbnail=%dx%d", pick ? pick->url.c_str() : "none", thumbnail_width,
+                 thumbnail_height);
+            std::lock_guard<std::mutex> lock(state->mutex);
+            state->item = pick;
+            state->thumbnail = std::move(thumbnail);
+            state->thumbnail_width = thumbnail_width;
+            state->thumbnail_height = thumbnail_height;
+            state->done = true;
+        });
+    }
+
+    void update_autoplay(bool& running, bool& force_redraw) {
+        if (!autoplay_enabled_ || shorts_mode_ || active_is_live_ || video_id_.empty() || !mpv_) {
+            return;
+        }
+        const auto now = std::chrono::steady_clock::now();
+        if (!autoplay_now_ && now - autoplay_last_check_ < std::chrono::milliseconds(250)) {
+            return;
+        }
+        autoplay_last_check_ = now;
+        if (last_duration_ > 0.0 && last_time_pos_ > last_duration_ - 60.0) {
+            start_next_fetch();
+        }
+
+        int eof = 0;
+        if (mpv_get_property(mpv_, "eof-reached", MPV_FORMAT_FLAG, &eof) < 0 || !eof) {
+            // Seeking back from the end stops the countdown and allows a new one later.
+            if (autoplay_counting_down()) {
+                autoplay_countdown_start_ = {};
+                force_redraw = true;
+            }
+            autoplay_cancelled_ = false;
+            return;
+        }
+        if (autoplay_cancelled_) {
+            return;
+        }
+        start_next_fetch();
+        std::optional<StreamItem> next;
+        {
+            std::lock_guard<std::mutex> lock(next_state_->mutex);
+            if (!next_state_->done) {
+                return;
+            }
+            next = next_state_->item;
+        }
+        if (!next.has_value()) {
+            return;
+        }
+        if (!autoplay_counting_down()) {
+            autoplay_countdown_start_ = now;
+            autoplay_next_title_ = clamp_text(osd_text(next->title), 52);
+        }
+        force_redraw = true;
+        if (!autoplay_now_ && now - autoplay_countdown_start_ < std::chrono::seconds(kAutoplayCountdownSeconds)) {
+            return;
+        }
+
+        const auto request = build_playback_request(*next, std::nullopt);
+        if (!request.has_value()) {
+            autoplay_countdown_start_ = {};
+            autoplay_cancelled_ = true;
+            return;
+        }
+        std::string ignored_error;
+        LibraryStore::instance().add_history(*next, &ignored_error);
+        queue_playback(*request);
+        logf("player: autoplay start url=%s", request->url.c_str());
+        running = false;
+    }
+
+    void render_autoplay_panel(int width, int height) {
+        autoplay_rect_ = {};
+        if (!autoplay_counting_down()) {
+            return;
+        }
+        const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(
+            std::chrono::steady_clock::now() - autoplay_countdown_start_).count();
+        const int remaining = std::max(1, kAutoplayCountdownSeconds - static_cast<int>(elapsed));
+        const int scale = std::max(2, height / 300);
+        const std::string heading = newpipe::tr("player/autoplay/countdown", std::to_string(remaining));
+        const std::string hint = newpipe::tr("player/autoplay/hint");
+        const int line = scale * 9;
+
+        if (!autoplay_thumbnail_ && next_state_) {
+            std::lock_guard<std::mutex> lock(next_state_->mutex);
+            if (!next_state_->thumbnail.empty()) {
+                autoplay_thumbnail_ = osd_font_.create_image(
+                    next_state_->thumbnail.data(), next_state_->thumbnail_width, next_state_->thumbnail_height);
+                next_state_->thumbnail.clear();
+            }
+        }
+        // The thumbnail (16:9) on the left, the three lines beside it.
+        const int thumb_h = autoplay_thumbnail_ ? line * 6 : 0;
+        const int thumb_w = thumb_h * 16 / 9;
+        const int gap = autoplay_thumbnail_ ? 24 : 0;
+        const int text_w = std::max({measure_text_width(autoplay_next_title_, scale), measure_text_width(heading, scale),
+                                     measure_text_width(hint, scale)});
+        const int text_h = line * 3 + 24;
+        const int content_h = std::max(thumb_h, text_h);
+        const int panel_w = std::min(width - 80, thumb_w + gap + text_w + 64);
+        const int panel_h = content_h + 48;
+        const int panel_x = (width - panel_w) / 2;
+        const int panel_y = (height - panel_h) / 2;
+        const int text_x = panel_x + 32 + thumb_w + gap;
+        const int text_y = panel_y + 24 + (content_h - text_h) / 2;
+        autoplay_rect_ = {panel_x, panel_y, panel_w, panel_h};
+        osd_font_.fill(panel_x, panel_y, panel_w, panel_h, width, height, 0.05f, 0.05f, 0.05f, 0.92f);
+        // The top edge fills up as the countdown runs.
+        const auto elapsed_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - autoplay_countdown_start_).count();
+        const double progress = std::min(1.0, elapsed_ms / (kAutoplayCountdownSeconds * 1000.0));
+        osd_font_.fill(panel_x, panel_y, panel_w, 4, width, height, 1.0f, 1.0f, 1.0f, 0.25f);
+        fill_rect(panel_x, panel_y, static_cast<int>(panel_w * progress), 4, height, 0.96f, 0.26f, 0.21f);
+        if (autoplay_thumbnail_) {
+            GLint viewport[4] = {0, 0, 0, 0};
+            glGetIntegerv(GL_VIEWPORT, viewport);
+            osd_font_.draw_image(autoplay_thumbnail_, panel_x + 32, panel_y + 24 + (content_h - thumb_h) / 2, thumb_w,
+                                 thumb_h, viewport[2], height);
+        }
+        draw_text_line(text_x, text_y, scale, height, heading, 0.96f, 0.96f, 0.96f);
+        draw_text_line(text_x, text_y + line + 8, scale, height, autoplay_next_title_, 1.0f, 0.78f, 0.32f);
+        draw_text_line(text_x, text_y + line * 2 + 24, scale, height, hint, 0.70f, 0.70f, 0.70f);
+    }
+
+    // Network lookups beside playback (sponsor segments, subtitles, the next video) run on
+    // helper threads kept here. libnx cannot detach a thread: std::thread::detach throws
+    // there and ended the app at every video. cleanup() cuts their requests short and joins.
+    template <typename Work>
+    void start_background(const char* what, Work work) {
+        try {
+            background_threads_.emplace_back(std::move(work));
+        } catch (const std::exception& ex) {
+            logf("player: %s thread not started: %s", what, ex.what());
+        }
+    }
+
+    // ---- SponsorBlock: the segments come from a worker; a segment is skipped once, when
+    // playback enters it, so seeking back into it plays it.
+    void start_sponsor_fetch() {
+        sponsor_state_ = std::make_shared<SponsorState>();
+        std::shared_ptr<SponsorState> state = sponsor_state_;
+        const std::string video_id = video_id_;
+        const std::atomic<bool>* abort = &background_abort_;
+        start_background("sponsor", [state, video_id, abort]() {
+            HttpsHttpClient client;
+            client.set_abort_flag(abort);
+            auto segments = fetch_sponsor_segments(client, video_id);
+            std::lock_guard<std::mutex> lock(state->mutex);
+            state->segments = std::move(segments);
+            state->done = true;
+        });
+    }
+
+    void update_sponsor_skip(bool& force_redraw) {
+        if (!sponsor_state_ || !mpv_ || scrub_target_ >= 0.0) {
+            return;
+        }
+        const auto now = std::chrono::steady_clock::now();
+        if (now - sponsor_last_check_ < std::chrono::milliseconds(250)) {
+            return;
+        }
+        sponsor_last_check_ = now;
+        std::vector<SkipSegment> segments;
+        {
+            std::lock_guard<std::mutex> lock(sponsor_state_->mutex);
+            if (!sponsor_state_->done || sponsor_state_->segments.empty()) {
+                return;
+            }
+            segments = sponsor_state_->segments;
+        }
+        if (sponsor_skipped_.size() != segments.size()) {
+            sponsor_skipped_.assign(segments.size(), false);
+        }
+        double position = 0.0;
+        if (mpv_get_property(mpv_, "time-pos", MPV_FORMAT_DOUBLE, &position) < 0 || !std::isfinite(position)) {
+            return;
+        }
+        for (size_t i = 0; i < segments.size(); i++) {
+            const SkipSegment& segment = segments[i];
+            if (sponsor_skipped_[i] || position < segment.start - 0.3 || position >= segment.end - 1.0) {
+                continue;
+            }
+            sponsor_skipped_[i] = true;
+            last_time_pos_ = position;
+            seek_relative(segment.end - position, force_redraw);
+            show_osd_message(
+                newpipe::tr(
+                    "player/osd/sponsor_skipped",
+                    std::to_string(static_cast<int>(std::lround(segment.end - segment.start)))),
+                3000);
+            logf("player: sponsor skipped %s %.1f-%.1f at %.1f",
+                 segment.category.c_str(), segment.start, segment.end, position);
+            break;
+        }
+    }
+
+    // ---- subtitles: YouTube's own tracks (json3), drawn with the overlay font. "+" opens a
+    // list of the video's tracks; the pick (on/off and its language) is kept for the next videos.
+    // The interface language; "auto" is the console's (see content_locale.hpp).
+    std::string interface_language() const {
+        const std::string language = SettingsStore::instance().settings().language;
+        if (!language.empty() && language != "auto") {
+            return language;
+        }
+        return content_hl();
+    }
+
+    // The language looked for first: the one last picked in the list, else the interface's.
+    std::string subtitle_language() const {
+        const std::string picked = SettingsStore::instance().settings().subtitle_language;
+        return picked.empty() ? interface_language() : picked;
+    }
+
+    // A track's name in the list and messages: Turkish names in the Turkish interface,
+    // YouTube's (English) names otherwise.
+    std::string subtitle_track_label(const CaptionTrack& track) const {
+        if (interface_language() == "tr") {
+            const std::string name = turkish_language_name(track.language_code, std::string());
+            if (name != track.language_code) {
+                return track.auto_generated ? newpipe::tr("player/subtitles/auto_track", name) : name;
+            }
+        }
+        return track.name.empty() ? track.language_code : track.name;
+    }
+
+    // Without a track the one pick_subtitle_track() prefers is fetched.
+    void start_subtitle_fetch(std::optional<CaptionTrack> track = std::nullopt) {
+        if (subtitle_state_ || video_id_.empty()) {
+            return;
+        }
+        subtitle_state_ = std::make_shared<SubtitleState>();
+        std::shared_ptr<SubtitleState> state = subtitle_state_;
+        if (!track.has_value()) {
+            track = pick_subtitle_track(captions_, subtitle_language(), original_language_);
+        }
+        if (!track.has_value()) {
+            std::lock_guard<std::mutex> lock(state->mutex);
+            state->done = true;
+            return;
+        }
+        const CaptionTrack chosen = *track;
+        {
+            std::lock_guard<std::mutex> lock(state->mutex);
+            state->track = chosen;
+        }
+        const std::atomic<bool>* abort = &background_abort_;
+        start_background("subtitles", [state, chosen, abort]() {
+            HttpsHttpClient client;
+            client.set_abort_flag(abort);
+            auto cues = fetch_subtitle_cues(client, chosen);
+            std::lock_guard<std::mutex> lock(state->mutex);
+            state->cues = std::move(cues);
+            state->done = true;
+        });
+    }
+
+    void open_subtitle_menu(bool& force_redraw) {
+        if (!first_frame_rendered_ || active_is_live_) {
+            return;
+        }
+        force_redraw = true;
+        if (captions_.empty()) {
+            show_osd_message(newpipe::tr("player/subtitles/none"), 2500);
+            return;
+        }
+        std::optional<CaptionTrack> current;
+        if (subtitles_on_ && subtitle_state_) {
+            std::lock_guard<std::mutex> lock(subtitle_state_->mutex);
+            current = subtitle_state_->track;
+        }
+        std::vector<std::string> items{newpipe::tr("player/subtitles/menu_off")};
+        int checked = 0;
+        for (size_t i = 0; i < captions_.size(); i++) {
+            items.push_back(subtitle_track_label(captions_[i]));
+            if (current.has_value() && current->base_url == captions_[i].base_url) {
+                checked = static_cast<int>(i) + 1;
+            }
+        }
+        open_menu(MenuKind::subtitles, newpipe::tr("player/subtitles/menu_title"), std::move(items), checked);
+    }
+
+    // index into captions_, -1 for off.
+    void choose_subtitles(int index, bool& force_redraw) {
+        const bool on = index >= 0 && index < static_cast<int>(captions_.size());
+        const std::string language =
+            on ? captions_[index].language_code : SettingsStore::instance().settings().subtitle_language;
+        std::string ignored_error;
+        SettingsStore::instance().update_subtitles(on, language, &ignored_error);
+        subtitles_on_ = on;
+        subtitle_state_.reset();
+        if (on) {
+            logf("player: subtitles picked %s (%s)", captions_[index].language_code.c_str(),
+                 captions_[index].auto_generated ? "auto" : "manual");
+            subtitles_announced_ = false;
+            start_subtitle_fetch(captions_[index]);
+            show_osd_message(newpipe::tr("player/subtitles/loading"), 2000);
+        } else {
+            show_osd_message(newpipe::tr("player/subtitles/off"), 2000);
+        }
+        force_redraw = true;
+    }
+
+    // ---- chapters: YouTube's player-bar chapters, marked on the progress bar; ZR lists them.
+    void start_chapter_fetch() {
+        chapter_state_ = std::make_shared<ChapterState>();
+        std::shared_ptr<ChapterState> state = chapter_state_;
+        const std::string video_id = video_id_;
+        const std::atomic<bool>* abort = &background_abort_;
+        start_background("chapters", [state, video_id, abort]() {
+            HttpsHttpClient client;
+            client.set_abort_flag(abort);
+            YouTubeCatalogService service(&client);
+            auto chapters = service.get_chapters(video_id);
+            std::lock_guard<std::mutex> lock(state->mutex);
+            state->chapters = std::move(chapters);
+            state->done = true;
+        });
+    }
+
+    // Moves the chapters over once the helper has them.
+    void take_chapters(bool& force_redraw) {
+        if (!chapter_state_) {
+            return;
+        }
+        std::vector<Chapter> chapters;
+        {
+            std::lock_guard<std::mutex> lock(chapter_state_->mutex);
+            if (!chapter_state_->done) {
+                return;
+            }
+            chapters = std::move(chapter_state_->chapters);
+        }
+        chapter_state_.reset();
+        chapters_ = std::move(chapters);
+        force_redraw = force_redraw || !chapters_.empty();
+    }
+
+    // The chapter playing at pos; -1 without chapters.
+    int chapter_at(double pos) const {
+        int index = -1;
+        // A little slack: a jump lands on or just before the chapter's first second.
+        for (size_t i = 0; i < chapters_.size() && chapters_[i].start <= pos + 1.0; i++) {
+            index = static_cast<int>(i);
+        }
+        return index;
+    }
+
+    void toggle_chapter_menu(bool& force_redraw) {
+        if (!first_frame_rendered_ || active_is_live_) {
+            return;
+        }
+        force_redraw = true;
+        if (menu_kind_ == MenuKind::chapters) {
+            menu_key(MenuKey::close, force_redraw);
+            return;
+        }
+        if (chapters_.empty()) {
+            show_osd_message(
+                newpipe::tr(chapter_state_ ? "player/chapters/loading" : "player/chapters/none"), 2500);
+            return;
+        }
+        std::vector<std::string> items;
+        for (const Chapter& chapter : chapters_) {
+            items.push_back(format_playback_time(chapter.start) + "  " + chapter.title);
+        }
+        open_menu(MenuKind::chapters, newpipe::tr("player/chapters/menu_title"), std::move(items),
+                  chapter_at(last_time_pos_));
+    }
+
+    void jump_to_chapter(int index, bool& force_redraw) {
+        if (index < 0 || index >= static_cast<int>(chapters_.size())) {
+            return;
+        }
+        const Chapter& chapter = chapters_[index];
+        logf("player: chapter %d at %.1f", index, chapter.start);
+        seek_relative(chapter.start - last_time_pos_, force_redraw);
+        show_osd_message(newpipe::tr("player/chapters/jumped", clamp_text(osd_text(chapter.title), 40)), 2500);
+    }
+
+    // ---- the list shown over the video (subtitle tracks, chapters). Up/down move the highlight,
+    // A picks, B or the button that opened it closes it; while it is up, the other buttons do nothing.
+    enum class MenuKind { none, subtitles, chapters, settings, speed, quality };
+    enum class MenuKey { up, down, pick, close };
+
+    bool menu_open() const {
+        return menu_kind_ != MenuKind::none;
+    }
+
+    void open_menu(MenuKind kind, std::string title, std::vector<std::string> items, int checked) {
+        menu_kind_ = kind;
+        menu_title_ = std::move(title);
+        menu_items_ = std::move(items);
+        menu_checked_ = checked;
+        menu_selected_ = std::max(0, checked);
+    }
+
+    void menu_key(MenuKey key, bool& force_redraw) {
+        force_redraw = true;
+        const int count = static_cast<int>(menu_items_.size());
+        if (key == MenuKey::up || key == MenuKey::down) {
+            if (count > 0) {
+                menu_selected_ = (menu_selected_ + (key == MenuKey::up ? count - 1 : 1)) % count;
+            }
+            return;
+        }
+        const MenuKind kind = menu_kind_;
+        const int index = menu_selected_;
+        menu_kind_ = MenuKind::none;
+        menu_items_.clear();
+        if (key == MenuKey::pick && kind == MenuKind::subtitles) {
+            choose_subtitles(index - 1, force_redraw);  // row 0 is "off"
+        } else if (key == MenuKey::pick && kind == MenuKind::chapters) {
+            jump_to_chapter(index, force_redraw);
+        } else if (key == MenuKey::pick && kind == MenuKind::settings) {
+            pick_setting(index, force_redraw);
+        } else if (key == MenuKey::pick && kind == MenuKind::speed) {
+            set_speed(kMenuSpeeds[index], force_redraw);
+        } else if (key == MenuKey::pick && kind == MenuKind::quality) {
+            choose_quality(index, force_redraw);
+        }
+    }
+
+    // ---- the settings list ("+"), as YouTube's player has it: each row names its current
+    // choice and opens its own list; the loop row just switches.
+    enum class SettingsRow { quality, speed, loop, subtitles, chapters };
+    static constexpr double kMenuSpeeds[] = {0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0};
+    static constexpr PlaybackQualityMode kMenuQualities[] = {
+        PlaybackQualityMode::BEST, PlaybackQualityMode::HD_1080, PlaybackQualityMode::HD_720,
+        PlaybackQualityMode::LOW_320};
+
+    static std::string quality_name(PlaybackQualityMode mode) {
+        switch (mode) {
+            case PlaybackQualityMode::HD_1080:
+                return newpipe::tr("settings/playback_quality/options/hd_1080");
+            case PlaybackQualityMode::HD_720:
+                return newpipe::tr("settings/playback_quality/options/hd_720");
+            case PlaybackQualityMode::LOW_320:
+                return newpipe::tr("settings/playback_quality/options/low_320");
+            default:
+                return newpipe::tr("player/settings/auto");  // docked 1080p, handheld 720p
+        }
+    }
+
+    static std::string speed_name(double speed) {
+        return std::fabs(speed - 1.0) < 0.01 ? newpipe::tr("player/settings/normal") : format_speed(speed) + "x";
+    }
+
+    void open_settings_menu(bool& force_redraw) {
+        if (!first_frame_rendered_) {
+            return;
+        }
+        force_redraw = true;
+        settings_rows_.clear();
+        std::vector<std::string> items;
+        const auto add = [this, &items](SettingsRow row, const char* name, const std::string& value) {
+            settings_rows_.push_back(row);
+            items.push_back(newpipe::tr(name) + ":  " + value);
+        };
+        std::string quality = quality_name(SettingsStore::instance().settings().playback_quality);
+        if (!active_quality_label_.empty()) {
+            quality += "  (" + active_quality_label_ + ")";
+        }
+        add(SettingsRow::quality, "player/settings/quality", quality);
+        add(SettingsRow::speed, "player/settings/speed", speed_name(g_playback_speed));
+        if (!active_is_live_) {
+            add(SettingsRow::loop, "player/settings/loop",
+                newpipe::tr(loop_on_ ? "player/settings/on" : "player/settings/off"));
+            std::string subtitles = newpipe::tr(captions_.empty() ? "player/settings/none" : "player/settings/off");
+            if (subtitles_on_ && subtitle_state_) {
+                std::lock_guard<std::mutex> lock(subtitle_state_->mutex);
+                if (subtitle_state_->track.has_value()) {
+                    subtitles = subtitle_track_label(*subtitle_state_->track);
+                }
+            }
+            add(SettingsRow::subtitles, "player/settings/subtitles", subtitles);
+        }
+        if (!chapters_.empty()) {
+            add(SettingsRow::chapters, "player/settings/chapters", std::to_string(chapters_.size()));
+        }
+        open_menu(MenuKind::settings, newpipe::tr("player/settings/title"), std::move(items), -1);
+    }
+
+    void pick_setting(int index, bool& force_redraw) {
+        if (index < 0 || index >= static_cast<int>(settings_rows_.size())) {
+            return;
+        }
+        switch (settings_rows_[index]) {
+            case SettingsRow::quality: {
+                const PlaybackQualityMode current = SettingsStore::instance().settings().playback_quality;
+                std::vector<std::string> items;
+                int checked = 0;
+                for (size_t i = 0; i < std::size(kMenuQualities); i++) {
+                    items.push_back(quality_name(kMenuQualities[i]));
+                    if (kMenuQualities[i] == current) {
+                        checked = static_cast<int>(i);
+                    }
+                }
+                open_menu(MenuKind::quality, newpipe::tr("player/settings/quality"), std::move(items), checked);
+                break;
+            }
+            case SettingsRow::speed: {
+                std::vector<std::string> items;
+                int checked = -1;
+                for (size_t i = 0; i < std::size(kMenuSpeeds); i++) {
+                    items.push_back(speed_name(kMenuSpeeds[i]));
+                    if (std::fabs(kMenuSpeeds[i] - g_playback_speed) < 0.01) {
+                        checked = static_cast<int>(i);
+                    }
+                }
+                open_menu(MenuKind::speed, newpipe::tr("player/settings/speed"), std::move(items), checked);
+                break;
+            }
+            case SettingsRow::loop:
+                loop_on_ = !loop_on_;
+                g_loop_video_id = loop_on_ ? video_id_ : std::string();
+                if (mpv_) {
+                    mpv_set_property_string(mpv_, "loop-file", loop_on_ ? "inf" : "no");
+                }
+                show_osd_message(newpipe::tr(loop_on_ ? "player/settings/loop_on" : "player/settings/loop_off"), 2000);
+                logf("player: loop=%d", loop_on_ ? 1 : 0);
+                break;
+            case SettingsRow::subtitles:
+                open_subtitle_menu(force_redraw);
+                break;
+            case SettingsRow::chapters:
+                toggle_chapter_menu(force_redraw);
+                break;
+        }
+        force_redraw = true;
+    }
+
+    void set_speed(double speed, bool& force_redraw) {
+        g_playback_speed = speed;
+        if (mpv_) {
+            mpv_set_property(mpv_, "speed", MPV_FORMAT_DOUBLE, &g_playback_speed);
+        }
+        show_osd_message(newpipe::tr("player/osd/speed", format_speed(g_playback_speed)), 2000);
+        logf("player: speed=%s", format_speed(g_playback_speed).c_str());
+        force_redraw = true;
+    }
+
+    // Another quality means resolving the stream again: the player saves the place, closes
+    // and opens the same video, which resumes there (the watch progress).
+    void choose_quality(int index, bool& force_redraw) {
+        if (index < 0 || index >= static_cast<int>(std::size(kMenuQualities))) {
+            return;
+        }
+        const PlaybackQualityMode mode = kMenuQualities[index];
+        if (mode == SettingsStore::instance().settings().playback_quality) {
+            return;
+        }
+        std::string ignored_error;
+        SettingsStore::instance().update_playback_quality(mode, &ignored_error);
+        show_osd_message(newpipe::tr("player/settings/quality_changed", quality_name(mode)), 3000);
+        logf("player: quality changed to %d, reopening", static_cast<int>(mode));
+        restart_requested_ = true;
+        force_redraw = true;
+    }
+
+    void render_menu(int width, int height) {
+        menu_rect_ = {};
+        menu_rows_rect_ = {};
+        if (!menu_open() || menu_items_.empty()) {
+            return;
+        }
+        const int scale = std::max(2, height / 300);
+        const int line = scale * 9;
+        const int row_h = line + 16;
+        const int count = static_cast<int>(menu_items_.size());
+        const int rows = std::min(count, std::max(3, (height - 240) / row_h));
+        // The rows shown: a window that keeps the highlight in view.
+        const int first = std::clamp(menu_selected_ - rows / 2, 0, count - rows);
+        const std::string hint = osd_text(newpipe::tr("player/menu/hint"));
+        const std::string title = osd_text(menu_title_);
+        int text_w = std::max(measure_text_width(title, scale), measure_text_width(hint, scale));
+        std::vector<std::string> labels;
+        for (int i = first; i < first + rows; i++) {
+            labels.push_back(clamp_text(osd_text(menu_items_[i]), 40));
+            text_w = std::max(text_w, measure_text_width(labels.back(), scale) + 28);
+        }
+        const int panel_w = std::min(width - 80, std::max(width / 3, text_w + 64));
+        const int panel_h = 20 + line + 16 + rows * row_h + 14 + line + 20;
+        const int panel_x = width - panel_w - 40;
+        const int panel_y = std::max(20, (height - panel_h) / 2);
+        osd_font_.fill(panel_x, panel_y, panel_w, panel_h, width, height, 0.06f, 0.06f, 0.06f, 0.92f);
+        fill_rect(panel_x, panel_y, panel_w, 4, height, 0.96f, 0.26f, 0.21f);
+        draw_text_line(panel_x + 24, panel_y + 20, scale, height, title, 0.96f, 0.96f, 0.96f);
+        int y = panel_y + 20 + line + 16;
+        menu_rect_ = {panel_x, panel_y, panel_w, panel_h};
+        menu_rows_rect_ = {panel_x, y, panel_w, rows * row_h};
+        menu_first_row_ = first;
+        menu_row_height_ = row_h;
+        for (int i = first; i < first + rows; i++) {
+            if (i == menu_selected_) {
+                osd_font_.fill(panel_x + 12, y, panel_w - 24, row_h, width, height, 1.0f, 1.0f, 1.0f, 0.16f);
+            }
+            if (i == menu_checked_) {
+                fill_rect(panel_x + 24, y + row_h / 2 - 4, 8, 8, height, 0.96f, 0.26f, 0.21f);
+            }
+            const float shade = i == menu_selected_ ? 1.0f : 0.80f;
+            draw_text_line(panel_x + 24 + 28, y + 8, scale, height, labels[i - first], shade, shade, shade);
+            y += row_h;
+        }
+        if (count > rows) {
+            // Scroll bar: where the shown rows are in the whole list.
+            const int track_y = panel_y + 20 + line + 16;
+            const int track_h = rows * row_h;
+            fill_rect(panel_x + panel_w - 10, track_y, 4, track_h, height, 0.20f, 0.20f, 0.20f);
+            fill_rect(panel_x + panel_w - 10, track_y + track_h * first / count, 4,
+                      std::max(8, track_h * rows / count), height, 0.70f, 0.70f, 0.70f);
+        }
+        draw_text_line(panel_x + 24, y + 14, scale, height, hint, 0.62f, 0.62f, 0.62f);
+    }
+
+    // Once the track is in: which language is shown, or that there is none.
+    void announce_subtitles(bool& force_redraw) {
+        if (!subtitles_on_ || subtitles_announced_ || !subtitle_state_) {
+            return;
+        }
+        std::optional<CaptionTrack> track;
+        size_t cue_count = 0;
+        {
+            std::lock_guard<std::mutex> lock(subtitle_state_->mutex);
+            if (!subtitle_state_->done) {
+                return;
+            }
+            track = subtitle_state_->track;
+            cue_count = subtitle_state_->cues.size();
+        }
+        subtitles_announced_ = true;
+        const std::string wanted = subtitle_language();
+        if (!track.has_value() || cue_count == 0) {
+            show_osd_message(newpipe::tr("player/subtitles/none"), 3000);
+        } else {
+            const std::string name = subtitle_track_label(*track);
+            show_osd_message(
+                same_language(track->language_code, wanted)
+                    ? newpipe::tr("player/subtitles/on", name)
+                    : newpipe::tr("player/subtitles/other", turkish_language_name(wanted, wanted), name),
+                4000);
+        }
+        force_redraw = true;
+    }
+
+    void render_subtitles(int width, int height) {
+        if (!subtitles_on_ || !subtitle_state_) {
+            return;
+        }
+        std::vector<std::string> lines;
+        {
+            std::lock_guard<std::mutex> lock(subtitle_state_->mutex);
+            if (!subtitle_state_->done) {
+                return;
+            }
+            // Cues are sorted by start. Automatic tracks roll up: overlapping cues stack, and
+            // only the newest two lines stay.
+            const double now = last_time_pos_;
+            for (const auto& cue : subtitle_state_->cues) {
+                if (cue.start > now) {
+                    break;
+                }
+                if (now >= cue.end) {
+                    continue;
+                }
+                size_t begin = 0;
+                while (begin <= cue.text.size()) {
+                    const size_t end = cue.text.find('\n', begin);
+                    const std::string line = cue.text.substr(begin, end == std::string::npos ? std::string::npos : end - begin);
+                    if (!line.empty()) {
+                        lines.push_back(line);
+                    }
+                    if (end == std::string::npos) {
+                        break;
+                    }
+                    begin = end + 1;
+                }
+            }
+        }
+        if (lines.empty()) {
+            return;
+        }
+        if (lines.size() > 2) {
+            lines.erase(lines.begin(), lines.end() - 2);
+        }
+
+        const int scale = std::max(3, height / 240);
+        const int line_height = scale * 12;
+        const int margin = std::max(20, width / 40);
+        // Above the progress bar when the info bar is up, else near the bottom edge.
+        int bottom = height - margin;
+        if (should_draw_osd()) {
+            bottom = std::min(bottom, height - static_cast<int>(std::lround(height * 122.0 / 720.0)));
+        }
+        int y = bottom - static_cast<int>(lines.size()) * line_height;
+        for (const std::string& line : lines) {
+            const std::string text = osd_text(line);
+            const int text_width = std::min(measure_text_width(text, scale), width - 2 * margin);
+            const int x = (width - text_width) / 2;
+            osd_font_.fill(x - 12, y - 2, text_width + 24, line_height, width, height, 0.0f, 0.0f, 0.0f, 0.75f);
+            draw_text_line(x, y + scale, scale, height, text, 1.0f, 1.0f, 1.0f);
+            y += line_height;
+        }
+    }
+
+    void cycle_speed(bool& force_redraw) {
+        const size_t count = sizeof(kPlaybackSpeeds) / sizeof(kPlaybackSpeeds[0]);
+        size_t next = 0;
+        for (size_t i = 0; i < count; i++) {
+            if (std::fabs(kPlaybackSpeeds[i] - g_playback_speed) < 0.01) {
+                next = (i + 1) % count;
+                break;
+            }
+        }
+        set_speed(kPlaybackSpeeds[next], force_redraw);
     }
 
     void handle_hat(Uint8 hat_value, bool& force_redraw) {
@@ -2504,9 +4543,22 @@ private:
             }
         }
 
+        // A seek that would not move (pressing on at the end) is dropped: repeated ones there
+        // left mpv stalled in the desktop tests.
+        if (!limited && std::fabs(target - last_time_pos_) < 0.5) {
+            show_osd_message(
+                newpipe::tr("player/osd/seek", format_playback_time(target), format_playback_time(last_duration_)),
+                1500);
+            return;
+        }
+        // Relative, so that mpv seeks in that direction: with keyframe seeks (hr-seek=no) an
+        // absolute target lands on the keyframe before it, and YouTube keyframes are about
+        // 10 s apart, so +10 s often did not move at all (seen in the desktop tests). In the
+        // last seconds there is no keyframe ahead to land on: absolute, and the end plays out.
+        const bool absolute = limited || target > last_duration_ - 15.0;
         char target_text[32];
-        std::snprintf(target_text, sizeof(target_text), "%.3f", target);
-        const char* command[] = {"seek", target_text, "absolute", nullptr};
+        std::snprintf(target_text, sizeof(target_text), "%.3f", absolute ? target : target - last_time_pos_);
+        const char* command[] = {"seek", target_text, absolute ? "absolute" : "relative", nullptr};
         // Async: a seek on the cache bridge can block on file IO, and this runs on
         // the render thread.
         if (mpv_command_async(mpv_, 0, command) < 0) {
@@ -2526,6 +4578,8 @@ private:
              delta_seconds,
              target,
              limited ? 1 : 0);
+        seek_diag_until_ = std::chrono::steady_clock::now() + std::chrono::seconds(12);
+        last_health_log_ = {};
     }
 
     void render_loading_screen(int phase) {
@@ -2534,11 +4588,97 @@ private:
         SDL_GL_GetDrawableSize(window_, &width, &height);
 
         glViewport(0, 0, width, height);
-        glClearColor(0.02f, 0.02f, 0.02f, 1.0f);
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
+        if (osd_font_ready()) {
+            render_loading_overlay(width, height);
+        } else {
+            render_loading_fallback(width, height, phase);
+        }
+        SDL_GL_SwapWindow(window_);
+        glFinish();
+    }
 
+    // As YouTube opens a video: its thumbnail, darkened, behind a spinning ring; the title and
+    // the channel under the ring, what is being done at the bottom.
+    void render_loading_overlay(int width, int height) {
+        OsdFont& font = osd_font_;
+        if (!loading_texture_ && loading_picture_) {
+            std::lock_guard<std::mutex> lock(loading_picture_->mutex);
+            if (!loading_picture_->pixels.empty()) {
+                loading_texture_ = font.create_image(loading_picture_->pixels.data(), loading_picture_->width,
+                                                     loading_picture_->height);
+                loading_picture_->pixels.clear();
+                loading_texture_since_ = SDL_GetTicks();
+            }
+        }
+        if (loading_texture_) {
+            font.draw_image(loading_texture_, 0, 0, width, height, width, height);
+            // Fades in over 300 ms; then dark enough for white text, darker still at the bottom.
+            const float shown = std::min(1.0f, (SDL_GetTicks() - loading_texture_since_) / 300.0f);
+            font.fill(0, 0, width, height, width, height, 0.0f, 0.0f, 0.0f, 1.0f - 0.34f * shown);
+            font.fade(0, height / 2, width, height - height / 2, width, height, 0.0f, 0.0f, 0.0f, 0.8f, false);
+        }
+
+        const int size = std::max(40, height * 9 / 100);
+        if (spinner_size_ != size) {
+            spinner_masks_.clear();
+            const float thickness = std::max(3.0f, size / 13.0f);
+            for (int i = 0; i < kSpinnerSteps; i++) {
+                const auto mask = make_arc_mask(size, thickness, 2.0f * kPi * i / kSpinnerSteps);
+                spinner_masks_.push_back(font.create_mask(mask.data(), size, size));
+            }
+            spinner_size_ = size;
+        }
+        // One turn a second, clockwise.
+        const size_t step = static_cast<size_t>(static_cast<uint64_t>(SDL_GetTicks()) * kSpinnerSteps / 1000)
+                            % kSpinnerSteps;
+        const int cx = width / 2;
+        const int cy = height * 40 / 100;
+        font.draw_mask(spinner_masks_[step], cx - size / 2, cy - size / 2, size, size, width, height, 1.0f, 1.0f,
+                       1.0f, 0.95f);
+
+        const int title_px = std::max(20, height * 44 / 1000);
+        const int channel_px = std::max(16, height * 31 / 1000);
+        const int status_px = std::max(14, height * 27 / 1000);
+        const int max_width = width * 3 / 4;
+        if (loading_lines_title_ != request_.title || loading_lines_width_ != max_width) {
+            loading_lines_ = wrap_osd_title(font, request_.title, title_px, max_width);
+            loading_lines_title_ = request_.title;
+            loading_lines_width_ = max_width;
+        }
+        int y = cy + size / 2 + height * 7 / 100;
+        for (const auto& line : loading_lines_) {
+            font.draw(line, (width - font.measure(line, title_px)) / 2, y, title_px, width, height, 1.0f, 1.0f, 1.0f);
+            y += title_px * 13 / 10;
+        }
+        if (!request_.channel.empty()) {
+            const std::string channel = fit_osd_text(font, request_.channel, channel_px, max_width);
+            font.draw(channel, (width - font.measure(channel, channel_px)) / 2, y + channel_px / 3, channel_px, width,
+                      height, 0.72f, 0.72f, 0.72f);
+        }
+
+        // What is being done, and under it the step, dimmer (not when it only repeats the title).
+        const auto [status, detail] = get_loading_status();
+        const int status_y = height - height * 13 / 100;
+        if (!status.empty()) {
+            const std::string line = fit_osd_text(font, status, status_px, max_width);
+            font.draw(line, (width - font.measure(line, status_px)) / 2, status_y, status_px, width, height, 0.8f, 0.8f,
+                      0.8f);
+        }
+        if (!detail.empty() && detail != clamp_text(osd_text(request_.title), 40)) {
+            const int detail_px = status_px * 85 / 100;
+            const std::string line = fit_osd_text(font, detail, detail_px, max_width);
+            font.draw(line, (width - font.measure(line, detail_px)) / 2, status_y + status_px * 3 / 2, detail_px, width,
+                      height, 0.55f, 0.55f, 0.55f);
+        }
+    }
+
+    // The bitmap font's screen (tests with NEWPIPE_OSD_BITMAP): a panel, dots, two lines.
+    void render_loading_fallback(int width, int height, int phase) {
         const int panel_w = width * 2 / 3;
-        const int panel_h = height / 3;
+        // Tall enough for the TrueType status lines under the spinner.
+        const int panel_h = height * 2 / 5;
         const int panel_x = (width - panel_w) / 2;
         const int panel_y = (height - panel_h) / 2;
         fill_rect(panel_x, panel_y, panel_w, panel_h, height, 0.10f, 0.10f, 0.10f);
@@ -2561,7 +4701,7 @@ private:
         const int title_scale = std::max(3, height / 240);
         const int detail_scale = std::max(2, height / 320);
         const int title_y = cy + radius + dot_size + height / 30;
-        const int detail_y = title_y + title_scale * 9;
+        const int detail_y = title_y + title_scale * 12;
 
         if (!title.empty()) {
             draw_text_line(
@@ -2587,8 +4727,6 @@ private:
                 0.65f);
         }
 
-        SDL_GL_SwapWindow(window_);
-        glFinish();
     }
 
     bool drain_mpv_events() {
@@ -2698,17 +4836,28 @@ private:
         };
 
         mpv_render_context_render(render_context_, params);
+        render_subtitles(width, height);
         render_playback_osd(width, height);
+        render_autoplay_panel(width, height);
+        render_menu(width, height);
         SDL_GL_SwapWindow(window_);
         mpv_render_context_report_swap(render_context_);
     }
 
     void cleanup() {
+        background_abort_.store(true);
+        for (auto& thread : background_threads_) {
+            if (thread.joinable()) {
+                thread.join();
+            }
+        }
+        background_threads_.clear();
         stop_stream_bridge();
         stop_audio_prefetch();
         destroy_mpv();
 
         if (gl_context_) {
+            osd_font_.release();
             SDL_GL_MakeCurrent(window_, nullptr);
             SDL_GL_DeleteContext(gl_context_);
             gl_context_ = nullptr;
@@ -2742,7 +4891,9 @@ private:
         joysticks_.clear();
 
         SDL_Quit();
+#ifdef __SWITCH__
         appletSetMediaPlaybackState(false);
+#endif
     }
 
     PlaybackRequest request_;
@@ -2776,6 +4927,8 @@ private:
     bool audio_attach_attempted_ = false;
     bool audio_wait_logged_ = false;
     std::string fallback_url_;
+    std::string hls_master_url_;
+    bool master_retry_done_ = false;
     std::string fallback_referer_;
     std::string fallback_http_header_fields_;
     std::string fallback_quality_label_;
@@ -2811,9 +4964,86 @@ private:
     std::vector<SDL_GameController*> game_controllers_;
     std::vector<SDL_Joystick*> joysticks_;
     bool has_game_controller_ = false;
+    int held_seek_direction_ = 0;
+    double scrub_target_ = -1.0;  // seek target while a seek button is held, -1 when idle
+    OsdFont osd_font_;
+    std::atomic<bool> background_abort_{false};
+    std::vector<std::thread> background_threads_;
+    std::string video_id_;        // YouTube id, for the watch progress
+    std::optional<double> active_loudness_lufs_;
+    std::vector<CaptionTrack> captions_;
+    std::string original_language_;
+    bool subtitles_on_ = false;
+    bool subtitles_announced_ = false;
+    std::shared_ptr<SubtitleState> subtitle_state_;
+    // Touch (see handle_touch) and where the last frame drew things, for its hit tests.
+    bool touch_down_ = false;
+    bool touch_on_bar_ = false;
+    SDL_FingerID touch_finger_ = 0;
+    int touch_start_x_ = 0;
+    int touch_start_y_ = 0;
+    ScreenRect osd_top_rect_;
+    ScreenRect osd_bottom_rect_;
+    ScreenRect osd_bar_rect_;
+    ScreenRect round_button_rect_;
+    ScreenRect settings_button_rect_;
+    ScreenRect menu_rect_;
+    ScreenRect menu_rows_rect_;
+    int menu_first_row_ = 0;
+    int menu_row_height_ = 1;
+    ScreenRect autoplay_rect_;
+    unsigned int play_button_texture_ = 0;  // textures owned by osd_font_
+    unsigned int pause_button_texture_ = 0;
+    unsigned int knob_texture_ = 0;
+    std::shared_ptr<ChapterState> chapter_state_;  // until take_chapters() moves them over
+    std::vector<Chapter> chapters_;
+    bool zr_held_ = false;
+    MenuKind menu_kind_ = MenuKind::none;
+    std::string menu_title_;
+    std::vector<std::string> menu_items_;
+    int menu_selected_ = 0;
+    int menu_checked_ = -1;  // the current choice, marked in the list
+    std::shared_ptr<SponsorState> sponsor_state_;
+    std::vector<bool> sponsor_skipped_;
+    std::chrono::steady_clock::time_point sponsor_last_check_{};
+    bool autoplay_enabled_ = false;
+    bool autoplay_cancelled_ = false;  // B during the countdown; reset by seeking away from the end
+    bool autoplay_now_ = false;        // A during the countdown
+    std::shared_ptr<NextVideoState> next_state_;
+    std::vector<SettingsRow> settings_rows_;  // what each row of the settings list opens
+    bool loop_on_ = false;
+    bool restart_requested_ = false;  // another quality: reopen the video where it is
+    bool reopening_ = false;          // this run ends for that reopen
+    // Shorts (see ShortsQueue): -1/+1 asked by a button or a swipe, done by update_shorts().
+    bool shorts_mode_ = false;
+    int shorts_step_ = 0;
+    bool shorts_waiting_ = false;  // the next Short was asked for before it came
+    bool shorts_ended_ = false;
+    std::shared_ptr<ShortsFetchState> shorts_fetch_;
+    std::shared_ptr<ShortsFetchState> shorts_title_;
+    std::string autoplay_next_title_;
+    unsigned int autoplay_thumbnail_ = 0;  // texture owned by osd_font_
+    std::chrono::steady_clock::time_point autoplay_countdown_start_{};
+    std::chrono::steady_clock::time_point autoplay_last_check_{};
+    double resume_from_ = 0.0;    // start position taken from the watch progress, 0 = start
+    std::chrono::steady_clock::time_point last_health_log_{};
+    std::chrono::steady_clock::time_point seek_diag_until_{};
+    bool held_seek_shoulder_ = false;
+    std::chrono::steady_clock::time_point held_seek_since_{};
+    std::chrono::steady_clock::time_point held_seek_last_{};
     mutable std::mutex status_mutex_;
     std::string loading_title_;
     std::string loading_detail_;
+    // The loading screen: the thumbnail (fetched, then a texture), the spinner's masks and
+    // the title's lines as last laid out.
+    std::shared_ptr<LoadingPictureState> loading_picture_;
+    unsigned int loading_texture_ = 0;
+    Uint32 loading_texture_since_ = 0;
+    std::vector<unsigned int> spinner_masks_;
+    int spinner_size_ = 0;
+    std::vector<std::string> loading_lines_;
+    std::string loading_lines_title_;
+    int loading_lines_width_ = 0;
     std::chrono::steady_clock::time_point last_progress_update_{};
     std::chrono::steady_clock::time_point load_started_at_{};
     std::chrono::steady_clock::time_point osd_visible_until_{};
@@ -2822,7 +5052,7 @@ private:
     // so hold the OSD on the requested position instead of letting it snap back.
     std::chrono::steady_clock::time_point osd_time_hold_until_{};
     std::chrono::steady_clock::time_point player_input_ready_at_{};
-    std::string osd_title_ = clamp_text(uppercase_ascii(request_.title), 52);
+    std::string osd_title_ = clamp_text(osd_text(request_.title), 52);
     std::string osd_message_;
     double last_time_pos_ = 0.0;
     double last_duration_ = 0.0;

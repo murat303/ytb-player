@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <deque>
 #include <functional>
 #include <mutex>
 #include <queue>
@@ -40,6 +41,7 @@ private:
 
     std::mutex cache_mutex_;
     std::unordered_map<std::string, std::string> cache_;
+    std::deque<std::string> cache_order_;  // oldest first, for eviction
 };
 
 }  // namespace newpipe

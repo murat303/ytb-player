@@ -1,53 +1,134 @@
+<!-- A video as YouTube's tablet grid shows it (three to a row): the thumbnail with its duration
+     on it; under it the channel's round picture beside the title (up to two lines), the channel
+     and "views • date" in gray. No box around it. -->
 <brls:Box
-    width="24%"
+    width="32.5%"
     height="auto"
     axis="column"
     marginRight="8"
-    paddingLeft="8"
-    paddingRight="8"
+    paddingLeft="6"
+    paddingRight="6"
     paddingTop="6"
-    paddingBottom="6"
+    paddingBottom="10"
     focusable="true"
-    cornerRadius="12"
-    backgroundColor="#1E2023">
+    cornerRadius="14"
+    highlightCornerRadius="14">
 
-    <brls:Image
-        id="stream/thumbnail"
+    <!-- A playlist: the edge of the next picture showing behind the cover. -->
+    <brls:Box
+        id="stream/stack"
         width="auto"
-        height="110"
-        scalingType="fill"
-        cornerRadius="8"
-        marginBottom="6" />
+        height="5"
+        marginLeft="16"
+        marginRight="16"
+        marginBottom="3"
+        cornerRadius="3"
+        backgroundColor="#4D4D4D"
+        visibility="gone" />
 
-    <brls:Label
-        id="stream/title"
-        width="auto"
-        height="auto"
-        fontSize="13"
-        textColor="#FFFFFF" />
-
-    <brls:Label
-        id="stream/channel"
+    <brls:Box
         width="auto"
         height="auto"
-        fontSize="11"
-        textColor="#F44336"
-        marginTop="3" />
+        axis="column">
 
-    <brls:Box width="auto" height="auto" axis="row" marginTop="2" justifyContent="spaceBetween">
-        <brls:Label
-            id="stream/left_meta"
+        <brls:Image
+            id="stream/thumbnail"
+            width="auto"
+            height="200"
+            scalingType="fill"
+            cornerRadius="12" />
+
+        <!-- How much of the video was watched here, along the bottom of the thumbnail. -->
+        <brls:Box
+            id="stream/progress"
+            height="4"
+            positionType="absolute"
+            positionLeft="8"
+            positionRight="8"
+            positionBottom="0"
+            backgroundColor="#FFFFFF66"
+            visibility="gone">
+
+            <brls:Box
+                id="stream/progress_fill"
+                width="0%"
+                height="4"
+                backgroundColor="#FF0000" />
+        </brls:Box>
+
+        <brls:Box
+            id="stream/badge"
             width="auto"
             height="auto"
-            fontSize="10"
-            textColor="#909090" />
+            positionType="absolute"
+            positionRight="8"
+            positionBottom="10"
+            paddingLeft="5"
+            paddingRight="5"
+            paddingTop="2"
+            paddingBottom="2"
+            cornerRadius="4"
+            backgroundColor="#000000CC"
+            visibility="gone">
 
-        <brls:Label
-            id="stream/right_meta"
-            width="auto"
+            <brls:Label
+                id="stream/badge_text"
+                width="auto"
+                height="auto"
+                fontSize="13"
+                textColor="#FFFFFF" />
+        </brls:Box>
+    </brls:Box>
+
+    <brls:Box
+        width="auto"
+        height="auto"
+        axis="row"
+        marginTop="10">
+
+        <brls:Image
+            id="stream/avatar"
+            width="36"
+            height="36"
+            scalingType="fill"
+            cornerRadius="18"
+            backgroundColor="#272727"
+            marginRight="10" />
+
+        <!-- A percentage width: with "auto" and grow a label is measured on one line and cut
+             instead of wrapping. -->
+        <brls:Box
+            id="stream/text"
+            width="86%"
             height="auto"
-            fontSize="10"
-            textColor="#909090" />
+            axis="column">
+
+            <brls:Label
+                id="stream/title"
+                width="auto"
+                height="auto"
+                fontSize="15"
+                lineHeight="1.3"
+                textColor="#F1F1F1" />
+
+            <brls:Label
+                id="stream/channel"
+                width="auto"
+                height="auto"
+                fontSize="13"
+                singleLine="true"
+                textColor="#AAAAAA"
+                marginTop="4" />
+
+            <brls:Label
+                id="stream/meta"
+                width="auto"
+                height="auto"
+                fontSize="13"
+                singleLine="true"
+                textColor="#AAAAAA"
+                marginTop="1" />
+        </brls:Box>
     </brls:Box>
 
 </brls:Box>

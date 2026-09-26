@@ -104,6 +104,20 @@ void SwitchFontLoader::loadFonts()
             brls::Logger::warning("Cannot find custom emoji, (Searched at: {})", USER_EMOJI_PATH);
         }
     }
+
+    // Latin text is drawn with the Standard font (see Application::getDefaultFont), so it
+    // needs the same fallback chain the Chinese font has for CJK, Korean and icon glyphs.
+    int regular = Application::getFont(FONT_REGULAR);
+    if (regular != FONT_INVALID)
+    {
+        for (const std::string& name : { FONT_CHINESE_SIMPLIFIED, FONT_CHINESE_SIMPLIFIED_EXT, FONT_CHINESE_TRADITIONAL,
+                 FONT_KOREAN_REGULAR, FONT_SWITCH_ICONS, FONT_MATERIAL_ICONS, std::string("emoji") })
+        {
+            int fallback = Application::getFont(name);
+            if (fallback != FONT_INVALID)
+                nvgAddFallbackFontId(vg, regular, fallback);
+        }
+    }
 }
 
 } // namespace brls

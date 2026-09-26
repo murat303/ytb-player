@@ -39,6 +39,23 @@ std::optional<ParsedUrl> parse_url(const std::string& url) {
 }
 
 #ifdef __SWITCH__
+// The start of an error answer on one line, for the log: YouTube says there why it refused.
+std::string error_excerpt(const std::string& body) {
+    std::string text = body.substr(0, 200);
+    for (char& ch : text) {
+        const unsigned char byte = static_cast<unsigned char>(ch);
+        if (byte < 0x20 || byte == 0x7F) {
+            ch = ' ';
+        }
+    }
+    return text;
+}
+
+// curl progress callback: a non-zero return aborts the transfer.
+int abort_requested(void* flag, curl_off_t, curl_off_t, curl_off_t, curl_off_t) {
+    return static_cast<const std::atomic<bool>*>(flag)->load() ? 1 : 0;
+}
+
 size_t write_callback(void* contents, size_t size, size_t nmemb, void* userp) {
     const size_t total_size = size * nmemb;
     auto* output = static_cast<std::string*>(userp);
@@ -87,6 +104,11 @@ std::optional<std::string> HttpsHttpClient::get(
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 15L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+    if (abort_flag_) {
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, abort_requested);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, const_cast<std::atomic<bool>*>(abort_flag_));
+    }
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
 
@@ -98,13 +120,17 @@ std::optional<std::string> HttpsHttpClient::get(
     curl_easy_cleanup(curl);
 
     if (result != CURLE_OK || status_code < 200 || status_code >= 300) {
-        logf("http: GET failed url=%s curl=%d status=%ld", url.c_str(), static_cast<int>(result), status_code);
+        logf("http: GET failed url=%s curl=%d status=%ld body=%s", url.c_str(), static_cast<int>(result),
+             status_code, error_excerpt(response_body).c_str());
         return std::nullopt;
     }
 
     logf("http: GET ok url=%s bytes=%zu", url.c_str(), response_body.size());
     return response_body;
 #else
+    if (abort_flag_ && abort_flag_->load()) {
+        return std::nullopt;
+    }
     const auto parsed = parse_url(url);
     if (!parsed.has_value()) {
         return std::nullopt;
@@ -170,6 +196,11 @@ std::optional<std::string> HttpsHttpClient::post(
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 15L);
     curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
+    if (abort_flag_) {
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, abort_requested);
+        curl_easy_setopt(curl, CURLOPT_XFERINFODATA, const_cast<std::atomic<bool>*>(abort_flag_));
+    }
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response_body);
 
@@ -181,13 +212,17 @@ std::optional<std::string> HttpsHttpClient::post(
     curl_easy_cleanup(curl);
 
     if (result != CURLE_OK || status_code < 200 || status_code >= 300) {
-        logf("http: POST failed url=%s curl=%d status=%ld", url.c_str(), static_cast<int>(result), status_code);
+        logf("http: POST failed url=%s curl=%d status=%ld body=%s", url.c_str(), static_cast<int>(result),
+             status_code, error_excerpt(response_body).c_str());
         return std::nullopt;
     }
 
     logf("http: POST ok url=%s bytes=%zu", url.c_str(), response_body.size());
     return response_body;
 #else
+    if (abort_flag_ && abort_flag_->load()) {
+        return std::nullopt;
+    }
     const auto parsed = parse_url(url);
     if (!parsed.has_value()) {
         return std::nullopt;

@@ -1,146 +1,135 @@
+<h1 align="center">YTB Player</h1>
+
 <p align="center">
-  <img src="./docs/banner.png" alt="Switch-NewPipe" width="848"/>
+  A YouTube client for the Nintendo Switch (homebrew), laid out like YouTube's tablet app.<br>
+  Works with the buttons and the touch screen. No ads, no Google sign-in.
 </p>
 
 <p align="center">
-  <strong>A free, open-source YouTube client for Nintendo Switch homebrew.</strong><br>
-  Inspired by <a href="https://github.com/TeamNewPipe/NewPipe">NewPipe</a> &mdash; no Google account required, no ads, no tracking.
+  <img src="docs/screenshots/home.jpg" alt="Home" width="820">
 </p>
 
-<p align="center">
-  <a href="./README_kr.md">한국어</a>
-</p>
+## Features
 
----
+- **Home** with YouTube's category chips (recommended, Shorts, live, music, gaming); L and R switch between them.
+- **Watch page**: the video's details, its channel, comments with replies and related videos.
+- **Shorts**: upright cards and a Shorts player that goes on to the next one (up and down, or a swipe).
+- **Channels**: banner, videos, Shorts, live streams and playlists.
+- **Subscriptions** (signed in): your feed, with filters for today, videos, live and Shorts.
+- **Library**: history and favorites on the SD card; Watch later, Liked videos and your playlists from your account.
+- **Notifications** from your account.
+- **Player**: up to 1080p docked and 720p handheld, a menu for quality, speed and loop, chapters, subtitles, SponsorBlock, loudness levelling, resume where you left off, autoplay.
+- **Sign in over Wi-Fi**: open the address the Switch shows on a computer or phone and send your cookies from there.
+- **Touch**: tap to play, hold a card for its page, swipe to scroll.
+- **Languages**: English, Turkish and Korean. The app starts in the console's language (English when it has no translation for it); Turkish can be picked in Settings.
 
 ## Screenshots
 
-| Home Feed | Player (720p) |
+| | |
 |:-:|:-:|
-| ![home](./docs/preview2.jpg) | ![player](./docs/preview1.jpg) |
+| ![Watch page](docs/screenshots/watch.jpg) | ![Comments](docs/screenshots/comments.jpg) |
+| **Watch page** | **Comments** |
+| ![Channel](docs/screenshots/channel.jpg) | ![Playlist](docs/screenshots/playlist.jpg) |
+| **Channel** | **Playlist** |
+| ![Shorts](docs/screenshots/shorts.jpg) | ![Shorts player](docs/screenshots/shorts-player.jpg) |
+| **Shorts** | **Shorts player** |
+| ![Opening a video](docs/screenshots/loading.jpg) | ![Player](docs/screenshots/player.jpg) |
+| **Opening a video** | **Player** |
+| ![Player menu](docs/screenshots/player-menu.jpg) | ![Search](docs/screenshots/search.jpg) |
+| **Player menu** | **Search** |
+| ![Subscriptions](docs/screenshots/subscriptions.jpg) | ![Library](docs/screenshots/library.jpg) |
+| **Subscriptions** | **Library** |
+| ![Notifications](docs/screenshots/notifications.jpg) | ![Settings](docs/screenshots/settings.jpg) |
+| **Notifications** | **Settings** |
+| ![Sign in over Wi-Fi](docs/screenshots/wifi-sign-in.jpg) | ![The sign-in page on a computer](docs/screenshots/sign-in-page.jpg) |
+| **Sign in over Wi-Fi** | **The page it opens on a computer** |
 
-## Install
+## Installation
 
-1. Make sure your Switch has **Atmosphere CFW** with the Homebrew Menu
-2. Download `switch_newpipe.nro` from the [latest release](../../releases/latest)
-3. Copy it to `sdmc:/switch/switch_newpipe.nro`
-4. Launch from the Homebrew Menu
-
-## What You Can Do
-
-- Browse **Home**, **Search**, **Subscriptions**, **Library**, and **Settings**
-- Watch YouTube up to **1080p** in docked mode (**720p** handheld) — HLS streaming, no throttle
-- Search for any video and play it immediately
-- Log in with cookies to see your subscriptions and personalized recommendations
-- Save watch history and favorites locally
-- English & Korean UI
+1. The Switch needs custom firmware (Atmosphère) and the Homebrew Menu.
+2. Download `ytb-player.nro` from the [latest release](../../releases/latest).
+3. Copy it to `sdmc:/switch/ytb-player/ytb-player.nro`.
+4. Start it from the Homebrew Menu. Open the Homebrew Menu through a game (hold R while starting one) rather than from the Album, so that the player gets the full memory.
 
 ## Controls
 
-### Main UI
+| Button | Lists | Player |
+|:-:|---|---|
+| A | Play | Pause / resume |
+| B | Back | Close |
+| X | Refresh | Info bar |
+| Y | Details (the video's page) | Speed |
+| L / R | Previous / next tab | Back / forward 60 s |
+| D-pad | Move | ◀ ▶ 10 s, ▲ ▼ volume |
+| − | Session (Subscriptions), clear (Library) | Start over |
+| + | | Settings: quality, speed, loop |
+| ZR | | Chapters |
 
-| Button | Action |
-|--------|--------|
-| `A` | Play video from list |
-| `Y` | Open video details |
-| `X` | Refresh / Reset defaults |
-| `RB` | Manage login session (Subscriptions tab) |
+In the Shorts player ▲ and ▼ go to the previous and next Short.
 
-### Player
+## Signing in (optional)
 
-| Button | Action |
-|--------|--------|
-| `A` | Pause / Resume |
-| `B` | Exit player |
-| `Up / Down` | Volume |
-| `Left / Right` | Seek 10 seconds |
-| `LB / RB` | Seek 60 seconds |
-| `X / Y` | Toggle OSD overlay |
+There is no Google sign-in; YTB Player uses the YouTube cookies of a browser where you are signed in. Everything except your subscriptions, your lists and notifications works without it.
 
-On progressive and UMP streams you can only seek inside the part that has already
-been downloaded; the OSD progress bar shows that range and the reachable limit.
+**Over Wi-Fi (no SD card needed):**
 
-## Login (Optional)
+1. In the app, open Subscriptions, press − and choose **Send over Wi-Fi**. The Switch shows an address such as `http://192.168.1.23:8080/k7p3`.
+2. Open that address in a browser on a computer (or phone) on the same network.
+3. Follow the steps on that page: it links the cookie export extension ("Get cookies.txt LOCALLY"), has you sign in to YouTube in a private window and export `cookies.txt`, and takes the file (drop it or choose it). The Switch signs in by itself.
 
-Switch-NewPipe uses cookie import for YouTube login. No OAuth or Google sign-in required.
+The page comes from the Switch, not from the internet, and it stops when the screen is closed.
 
-**How to set up:**
+**With a file:** save the cookies as `sdmc:/switch/ytb-player/auth.txt` (a `Cookie` header, JSON `{"cookie_header": "..."}` or Netscape `cookies.txt`), then choose **Load File** in the same menu.
 
-1. Export your YouTube cookies from a browser (using a cookie export extension)
-2. Save the file as `sdmc:/switch/switch_newpipe_auth.txt`
-3. Restart the app
+Signed in, you get your subscriptions, a personal Home, Watch later, Liked videos, your playlists and notifications. The cookies stay on the SD card; keep them as private as a password.
 
-Supported formats: raw `Cookie` header, JSON `{"cookie_header":"..."}`, or Netscape `cookies.txt`.
+## Files
 
-Once logged in, your **Subscriptions** tab and **personalized Home recommendations** will be available.
+Everything is kept in `sdmc:/switch/ytb-player/`:
 
-## Playback Quality
+| File | Contents |
+|---|---|
+| `settings.json` | Settings |
+| `library.json` | History and favorites |
+| `progress.json` | Where each video was left |
+| `session.json` | The login session |
+| `auth.txt` | Cookies to import (you add it) |
+| `ytb-player.log` | Log of the last run |
 
-Configure in **Settings** tab:
+On its first start YTB Player copies the settings, history and session of Switch-NewPipe (`sdmc:/switch/switch_newpipe_*`) when they are there; Switch-NewPipe keeps its own.
 
-| Mode | Description |
-|------|-------------|
-| **Best** | Auto by console state: **1080p when docked**, **720p in handheld** |
-| **1080p** | Always target 1080p (HLS), falls back gracefully |
-| **720p** | Always target 720p (HLS), falls back gracefully |
-| **320p** | Low quality (~360p progressive MP4) to save bandwidth |
+## Building
 
-## Data Files
-
-All data is stored on your SD card:
-
-| File | Purpose |
-|------|---------|
-| `sdmc:/switch/switch_newpipe.log` | Debug log |
-| `sdmc:/switch/switch_newpipe_settings.json` | Settings |
-| `sdmc:/switch/switch_newpipe_library.json` | Watch history & favorites |
-| `sdmc:/switch/switch_newpipe_session.json` | Login session |
-| `sdmc:/switch/switch_newpipe_auth.txt` | Cookie import (you provide this) |
-
-## Build from Source
-
-Requires Docker and a host C++ compiler.
+The Switch build runs in Docker with devkitPro:
 
 ```bash
-# Full build (portlibs + app)
-./build.sh
-
-# App only (after first full build)
-./build.sh --app-only
-
-# Clean everything
-./build.sh --clean
+./build.sh             # the first time also builds FFmpeg and mpv for the Switch (slow)
+./build.sh --app-only  # later builds
 ```
 
-Output: `cmake-build-switch/switch_newpipe.nro`
+The result is `cmake-build-switch/ytb-player.nro`.
 
-<details>
-<summary>Host validation tools (for development)</summary>
+For development there is a Linux desktop build and a command-line tool for the YouTube code:
 
 ```bash
-make host
-./build/host/switch_newpipe_host
-./build/host/switch_newpipe_host --search Zelda
-./build/host/switch_newpipe_host --resolve 'https://www.youtube.com/watch?v=dQw4w9WgXcQ'
+cmake -B build -DPLATFORM_DESKTOP=ON -DDESKTOP_PLAYER=ON && cmake --build build --target ytb_player
+make host && ./build/host/ytb_player_host --search "nintendo"
 ```
 
-</details>
+## Credits
 
-## Known Limitations
+YTB Player is a modified version of [Switch-NewPipe](https://github.com/mirusu400/switch-newpipe) by mirusu400. The changes are by muratgokce (2026).
 
-- Seek is not yet supported
-- No in-app quality picker during playback
-- No in-app Google OAuth (cookie import only)
-- Channel pages are not fully browsable yet
-- Comments and playlists load first page only
+It is built on:
 
-## Tech Stack
-
-- **UI**: [Borealis](https://github.com/natinusala/borealis) (native Switch UI framework)
-- **Playback**: mpv + FFmpeg (hardware-accelerated on Switch)
-- **Networking**: libcurl + custom YouTube innertube API client
-- **Build**: CMake, Docker, devkitPro toolchain
+- [borealis](https://github.com/natinusala/borealis) (natinusala, XITRIX, xfangfang): the user interface
+- [mpv](https://mpv.io) and [FFmpeg](https://ffmpeg.org): playback
+- [QuickJS](https://bellard.org/quickjs/), [lunasvg](https://github.com/sammycage/lunasvg), [nlohmann/json](https://github.com/nlohmann/json), [cpp-httplib](https://github.com/yhirose/cpp-httplib), stb and nanovg
+- [Material icons](https://fonts.google.com/icons) by Google
+- [SponsorBlock](https://sponsor.ajay.app) for the sponsor segments
 
 ## License
 
-This project is for educational purposes. It is not affiliated with YouTube, Google, or NewPipe.
+GPL-3.0, see [LICENSE.MD](LICENSE.MD). It comes with no warranty.
+
+YTB Player is not affiliated with or endorsed by YouTube, Google or Nintendo. YouTube is a trademark of Google LLC; Nintendo Switch is a trademark of Nintendo.

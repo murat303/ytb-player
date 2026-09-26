@@ -1,25 +1,14 @@
+<!-- Search as in YouTube's app: the top bar; then (scrolling with the results) the round search
+     box, the recent searches as chips and the results grid. -->
 <brls:Box
     width="auto"
     height="auto"
     axis="column"
-    paddingTop="20"
+    paddingTop="12"
     paddingLeft="20"
     paddingRight="20">
 
-    <brls:Label
-        id="search/status"
-        width="auto"
-        height="auto"
-        text="X 버튼으로 검색"
-        fontSize="20"
-        textColor="#EAEAEA"
-        marginBottom="12" />
-
-    <brls:ProgressSpinner
-        id="search/spinner"
-        width="auto"
-        height="80"
-        visibility="gone" />
+    <PageHeader id="search/header" title="@i18n/app/search" />
 
     <brls:ScrollingFrame
         id="search/scroll"
@@ -27,10 +16,70 @@
         grow="1.0">
 
         <brls:Box
-            id="search/grid"
             width="auto"
             height="auto"
-            axis="column" />
+            axis="column">
+
+            <brls:Box
+                id="search/bar"
+                width="auto"
+                height="auto"
+                axis="row"
+                alignItems="center"
+                focusable="true"
+                cornerRadius="24"
+                highlightCornerRadius="24"
+                backgroundColor="#272727"
+                paddingTop="11"
+                paddingBottom="11"
+                paddingLeft="18"
+                paddingRight="18"
+                marginBottom="14">
+
+                <SVGImage
+                    id="search/bar_icon"
+                    width="24"
+                    height="24"
+                    marginRight="14" />
+
+                <brls:Label
+                    id="search/bar_text"
+                    width="auto"
+                    height="auto"
+                    fontSize="18"
+                    singleLine="true"
+                    textColor="#AAAAAA" />
+            </brls:Box>
+
+            <brls:Box
+                id="search/history"
+                width="auto"
+                height="auto"
+                axis="row"
+                marginBottom="14" />
+
+            <brls:Label
+                id="search/status"
+                width="auto"
+                height="auto"
+                text=""
+                fontSize="18"
+                textColor="#AAAAAA"
+                marginBottom="12"
+                visibility="gone" />
+
+            <brls:ProgressSpinner
+                id="search/spinner"
+                width="auto"
+                height="80"
+                visibility="gone" />
+
+            <brls:Box
+                id="search/grid"
+                width="auto"
+                height="auto"
+                axis="column" />
+        </brls:Box>
 
     </brls:ScrollingFrame>
 

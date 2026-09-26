@@ -21,6 +21,15 @@ enum class PlaybackQualityMode {
 // operation mode (docked -> 1080p, handheld -> 720p); on host it targets 1080p.
 int preferred_height_for_quality(PlaybackQualityMode mode);
 
+// A subtitle track YouTube lists for a video (timedtext API).
+struct CaptionTrack {
+    std::string base_url;
+    std::string language_code;
+    std::string name;
+    bool auto_generated = false;  // speech recognition ("asr")
+    bool translatable = false;    // can be machine translated with &tlang=
+};
+
 struct ResolvedPlayback {
     std::string stream_url;
     std::string referer;
@@ -28,7 +37,13 @@ struct ResolvedPlayback {
     std::string quality_label;
     std::string audio_language;
     int hls_bitrate = 0;
+    // Integrated loudness (LUFS) YouTube lists for the stream (HLS YT-EXT-ABSOLUTE-LOUDNESS).
+    std::optional<double> loudness_lufs;
+    std::vector<CaptionTrack> captions;
     std::string playlist_body;
+    // Full HLS master behind a trimmed playlist_body; the player retries it when the
+    // trimmed playlist fails to open.
+    std::string hls_master_url;
     std::string external_audio_url;
     std::string external_audio_playlist_body;
     std::string fallback_stream_url;

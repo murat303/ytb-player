@@ -22,8 +22,10 @@ inline std::optional<PlaybackRequest> build_playback_request(
 
     PlaybackRequest request;
     request.title = item.title;
+    request.channel = item.channel_name;
     request.url = url;
     request.referer = item.url;
+    request.reel_sequence = item.reel_sequence;
     if (item.url.empty()) {
         request.http_header_fields =
             "Accept: */*,Accept-Encoding: identity,Connection: close,Cache-Control: no-cache";

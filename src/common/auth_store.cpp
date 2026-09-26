@@ -17,6 +17,8 @@
 #include <vector>
 
 #include "nlohmann/json.hpp"
+#include "newpipe/app_paths.hpp"
+#include "newpipe/content_locale.hpp"
 #include "newpipe/log.hpp"
 
 #ifdef __SWITCH__
@@ -201,7 +203,7 @@ std::optional<AuthSession> parse_auth_source(
     const std::string trimmed = trim(raw);
     if (trimmed.empty()) {
         if (error_message) {
-            *error_message = "인증 파일이 비어 있습니다";
+            *error_message = localized("Giriş dosyası boş", "The login file is empty");
         }
         return std::nullopt;
     }
@@ -254,7 +256,7 @@ std::optional<AuthSession> parse_auth_source(
 
     if (cookie_header.empty() || sapisid.empty()) {
         if (error_message) {
-            *error_message = "쿠키에서 SAPISID 계열 값을 찾지 못했습니다";
+            *error_message = localized("Çerezlerde SAPISID bulunamadı", "No SAPISID in the cookies");
         }
         return std::nullopt;
     }
@@ -298,19 +300,11 @@ std::string build_sapisid_hash(const std::string& sapisid, const std::string& or
 }  // namespace
 
 std::string default_auth_import_path() {
-#ifdef __SWITCH__
-    return "sdmc:/switch/switch_newpipe_auth.txt";
-#else
-    return "switch_newpipe_auth.txt";
-#endif
+    return app_file_path("auth.txt");
 }
 
 std::string default_auth_session_path() {
-#ifdef __SWITCH__
-    return "sdmc:/switch/switch_newpipe_session.json";
-#else
-    return "switch_newpipe_session.json";
-#endif
+    return app_file_path("session.json");
 }
 
 AuthStore& AuthStore::instance() {
@@ -341,18 +335,51 @@ bool AuthStore::load(std::string* error_message) {
     const auto session = parse_auth_source(raw, "saved session", default_auth_session_path(), &parse_error);
     if (!session.has_value()) {
         if (error_message) {
-            *error_message = parse_error.empty() ? "저장된 세션 파일 파싱 실패" : parse_error;
+            *error_message = parse_error.empty() ? localized("Kayıtlı oturum dosyası çözümlenemedi", "Could not read the saved session file") : parse_error;
         }
         return false;
     }
 
     this->session_ = *session;
+    // The channel picked in Settings, kept beside the cookies.
+    const json saved = json::parse(raw, nullptr, false);
+    if (saved.is_object()) {
+        for (auto [key, field] : {std::pair{"page_id", &this->session_.page_id},
+                                  std::pair{"channel_name", &this->session_.channel_name},
+                                  std::pair{"photo_url", &this->session_.photo_url}}) {
+            if (saved.contains(key) && saved.at(key).is_string()) {
+                *field = saved.at(key).get<std::string>();
+            }
+        }
+    }
     this->loaded_ = true;
     if (error_message) {
         error_message->clear();
     }
-    logf("auth: loaded session source=%s", this->session_.source_label.c_str());
+    logf("auth: loaded session source=%s channel=%s", this->session_.source_label.c_str(),
+         this->session_.page_id.empty() ? "default" : "picked");
     return true;
+}
+
+bool AuthStore::set_identity(
+    const std::string& page_id,
+    const std::string& channel_name,
+    const std::string& photo_url,
+    std::string* error_message) {
+    {
+        std::lock_guard<std::mutex> lock(this->mutex_);
+        if (!this->session_.authenticated()) {
+            if (error_message) {
+                *error_message = localized("Giriş oturumu yok", "Not signed in");
+            }
+            return false;
+        }
+        this->session_.page_id = page_id;
+        this->session_.channel_name = channel_name;
+        this->session_.photo_url = photo_url;
+    }
+    logf("auth: acting for %s", page_id.empty() ? "the session's channel" : "a picked channel");
+    return this->persist_session(error_message);
 }
 
 bool AuthStore::reload(std::string* error_message) {
@@ -383,7 +410,7 @@ bool AuthStore::update_from_cookie_header(
     const auto session = parse_auth_source(cookie_header, source_label, {}, &parse_error);
     if (!session.has_value()) {
         if (error_message) {
-            *error_message = parse_error.empty() ? "쿠키 파싱 실패" : parse_error;
+            *error_message = parse_error.empty() ? localized("Çerez çözümlenemedi", "Could not read the cookies") : parse_error;
         }
         return false;
     }
@@ -411,7 +438,7 @@ bool AuthStore::import_from_file(const std::string& file_path, std::string* erro
     std::string raw;
     if (!read_text_file(resolved_path, raw)) {
         if (error_message) {
-            *error_message = "인증 파일을 열 수 없습니다: " + resolved_path;
+            *error_message = localized("Giriş dosyası açılamadı: ", "Could not open the login file: ") + resolved_path;
         }
         return false;
     }
@@ -420,7 +447,7 @@ bool AuthStore::import_from_file(const std::string& file_path, std::string* erro
     const auto session = parse_auth_source(raw, "imported file", resolved_path, &parse_error);
     if (!session.has_value()) {
         if (error_message) {
-            *error_message = parse_error.empty() ? "인증 파일 파싱 실패" : parse_error;
+            *error_message = parse_error.empty() ? localized("Giriş dosyası çözümlenemedi", "Could not read the login file") : parse_error;
         }
         return false;
     }
@@ -454,7 +481,7 @@ bool AuthStore::clear(std::string* error_message) {
         std::ifstream existing(default_auth_session_path());
         if (existing.good()) {
             if (error_message) {
-                *error_message = "세션 파일 삭제 실패";
+                *error_message = localized("Oturum dosyası silinemedi", "Could not delete the session file");
             }
             return false;
         }
@@ -479,7 +506,7 @@ std::vector<HttpHeader> AuthStore::build_youtube_headers(
 
     if (!session_copy.authenticated()) {
         if (error_message) {
-            *error_message = "로그인 세션이 없습니다";
+            *error_message = localized("Giriş oturumu yok", "Not signed in");
         }
         return {};
     }
@@ -488,7 +515,7 @@ std::vector<HttpHeader> AuthStore::build_youtube_headers(
         error_message->clear();
     }
 
-    return {
+    std::vector<HttpHeader> headers = {
         {"Cookie", session_copy.cookie_header},
         {"Authorization", build_sapisid_hash(session_copy.sapisid, origin)},
         {"Origin", origin},
@@ -497,6 +524,11 @@ std::vector<HttpHeader> AuthStore::build_youtube_headers(
         {"X-Goog-AuthUser", "0"},
         {"X-Youtube-Bootstrap-Logged-In", "true"},
     };
+    if (!session_copy.page_id.empty()) {
+        // Acts for the channel picked in Settings (a brand channel of the account).
+        headers.push_back({"X-Goog-PageId", session_copy.page_id});
+    }
+    return headers;
 }
 
 bool AuthStore::persist_session(std::string* error_message) {
@@ -511,11 +543,14 @@ bool AuthStore::persist_session(std::string* error_message) {
         {"source_label", session_copy.source_label},
         {"source_path", session_copy.source_path},
         {"display_name", session_copy.display_name},
+        {"page_id", session_copy.page_id},
+        {"channel_name", session_copy.channel_name},
+        {"photo_url", session_copy.photo_url},
     };
 
     if (!write_text_file(default_auth_session_path(), root.dump(2))) {
         if (error_message) {
-            *error_message = "세션 파일 저장 실패";
+            *error_message = localized("Oturum dosyası kaydedilemedi", "Could not save the session file");
         }
         return false;
     }

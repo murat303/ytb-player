@@ -13,6 +13,11 @@ struct AppSettings {
     std::string home_kiosk = "recommended";
     PlaybackQualityMode playback_quality = PlaybackQualityMode::BEST;
     bool hide_short_videos = false;
+    bool hardware_decoding = false;
+    bool autoplay_next = true;
+    bool skip_sponsors = true;
+    bool subtitles_enabled = false;
+    std::string subtitle_language;  // picked in the player's subtitle list; empty: the interface language
 };
 
 std::string default_settings_store_path();
@@ -32,6 +37,12 @@ public:
         PlaybackQualityMode playback_quality,
         std::string* error_message = nullptr);
     bool update_hide_short_videos(bool hide_short_videos, std::string* error_message = nullptr);
+    bool update_hardware_decoding(bool hardware_decoding, std::string* error_message = nullptr);
+    bool update_autoplay_next(bool autoplay_next, std::string* error_message = nullptr);
+    bool update_skip_sponsors(bool skip_sponsors, std::string* error_message = nullptr);
+    bool update_subtitles_enabled(bool subtitles_enabled, std::string* error_message = nullptr);
+    bool update_subtitles(bool subtitles_enabled, const std::string& subtitle_language,
+                          std::string* error_message = nullptr);
     bool reset(std::string* error_message = nullptr);
 
 private:

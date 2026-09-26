@@ -1,0 +1,135 @@
+<!-- A video as a row of a list, as YouTube's tablet Library shows one: the thumbnail on the
+     left with its duration; to its right the title (up to two lines), "views • date" and the
+     channel. The same ids as stream_card.xml, so that StreamCard fills either. -->
+<brls:Box
+    width="100%"
+    height="auto"
+    axis="row"
+    paddingTop="6"
+    paddingBottom="6"
+    paddingLeft="6"
+    paddingRight="6"
+    marginBottom="4"
+    focusable="true"
+    cornerRadius="14"
+    highlightCornerRadius="14">
+
+    <brls:Box
+        width="272"
+        height="auto"
+        axis="column">
+
+        <brls:Box
+            id="stream/stack"
+            width="auto"
+            height="5"
+            marginLeft="16"
+            marginRight="16"
+            marginBottom="3"
+            cornerRadius="3"
+            backgroundColor="#4D4D4D"
+            visibility="gone" />
+
+        <brls:Box
+            width="auto"
+            height="auto"
+            axis="column">
+
+            <brls:Image
+                id="stream/thumbnail"
+                width="272"
+                height="153"
+                scalingType="fill"
+                cornerRadius="12" />
+
+            <brls:Box
+                id="stream/progress"
+                height="4"
+                positionType="absolute"
+                positionLeft="8"
+                positionRight="8"
+                positionBottom="0"
+                backgroundColor="#FFFFFF66"
+                visibility="gone">
+
+                <brls:Box
+                    id="stream/progress_fill"
+                    width="0%"
+                    height="4"
+                    backgroundColor="#FF0000" />
+            </brls:Box>
+
+            <brls:Box
+                id="stream/badge"
+                width="auto"
+                height="auto"
+                positionType="absolute"
+                positionRight="8"
+                positionBottom="10"
+                paddingLeft="5"
+                paddingRight="5"
+                paddingTop="2"
+                paddingBottom="2"
+                cornerRadius="4"
+                backgroundColor="#000000CC"
+                visibility="gone">
+
+                <brls:Label
+                    id="stream/badge_text"
+                    width="auto"
+                    height="auto"
+                    fontSize="13"
+                    textColor="#FFFFFF" />
+            </brls:Box>
+        </brls:Box>
+    </brls:Box>
+
+    <!-- A fixed width, as on the cards: with "auto" and grow the title would not wrap. -->
+    <brls:Box
+        width="512"
+        height="auto"
+        axis="row"
+        marginLeft="16">
+
+        <brls:Image
+            id="stream/avatar"
+            width="24"
+            height="24"
+            scalingType="fill"
+            cornerRadius="12"
+            visibility="gone" />
+
+        <brls:Box
+            id="stream/text"
+            width="100%"
+            height="auto"
+            axis="column">
+
+            <brls:Label
+                id="stream/title"
+                width="auto"
+                height="auto"
+                fontSize="17"
+                lineHeight="1.3"
+                textColor="#F1F1F1" />
+
+            <brls:Label
+                id="stream/meta"
+                width="auto"
+                height="auto"
+                fontSize="13"
+                singleLine="true"
+                textColor="#AAAAAA"
+                marginTop="4" />
+
+            <brls:Label
+                id="stream/channel"
+                width="auto"
+                height="auto"
+                fontSize="13"
+                singleLine="true"
+                textColor="#AAAAAA"
+                marginTop="8" />
+        </brls:Box>
+    </brls:Box>
+</brls:Box>

@@ -29,6 +29,10 @@ public:
     bool clear_history(std::string* error_message = nullptr);
     bool clear_favorites(std::string* error_message = nullptr);
 
+    // Recent search queries, newest first, shown under the search box as on YouTube.
+    std::vector<std::string> search_history();
+    bool add_search(const std::string& query, std::string* error_message = nullptr);
+
 private:
     LibraryStore() = default;
 
@@ -39,6 +43,7 @@ private:
     bool loaded_ = false;
     std::vector<StreamItem> history_items_;
     std::vector<StreamItem> favorite_items_;
+    std::vector<std::string> searches_;
 };
 
 }  // namespace newpipe

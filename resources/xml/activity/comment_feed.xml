@@ -1,3 +1,7 @@
+<!-- A video's comments as YouTube lists them: "Comments 1.2K" and the orders (top, newest) as
+     chips; each comment with its author's round picture, "@name • 2 days ago", the text, the
+     likes and a blue "12 replies" that opens them. The replies screen shows the comment first.
+     The chips sit inside the scrolled content, so that up from the first comment reaches them. -->
 <brls:AppletFrame
     headerHidden="true"
     footerHidden="false">
@@ -5,35 +9,86 @@
         width="100%"
         height="100%"
         axis="column"
-        paddingTop="20"
-        paddingLeft="20"
-        paddingRight="20">
-        <brls:Label
-            id="comments/title"
-            width="auto"
-            height="auto"
-            text="댓글"
-            fontSize="24"
-            textColor="#FFFFFF"
-            marginBottom="8" />
+        paddingTop="16"
+        paddingLeft="28"
+        paddingRight="28">
 
-        <brls:Label
-            id="comments/subtitle"
+        <!-- Something focusable while the list loads; it steps aside once comments are there. -->
+        <brls:Box
+            id="comments/holder"
             width="auto"
-            height="auto"
-            text="B 뒤로"
-            fontSize="16"
-            textColor="#B0B0B0"
-            marginBottom="10" />
+            height="1"
+            focusable="true"
+            hideHighlight="true" />
 
         <brls:ScrollingFrame
+            id="comments/scroll"
             width="auto"
             grow="1.0">
+
             <brls:Box
-                id="comments/list"
-                width="100%"
+                width="auto"
                 height="auto"
-                axis="column" />
+                axis="column"
+                paddingBottom="16">
+
+                <brls:Box
+                    width="auto"
+                    height="auto"
+                    axis="row"
+                    alignItems="center">
+
+                    <brls:Label
+                        id="comments/title"
+                        width="auto"
+                        height="auto"
+                        fontSize="26"
+                        singleLine="true"
+                        textColor="#FFFFFF" />
+
+                    <brls:Label
+                        id="comments/count"
+                        width="auto"
+                        height="auto"
+                        fontSize="17"
+                        singleLine="true"
+                        textColor="#AAAAAA"
+                        marginLeft="12" />
+                </brls:Box>
+
+                <brls:Label
+                    id="comments/subtitle"
+                    width="auto"
+                    height="auto"
+                    fontSize="14"
+                    singleLine="true"
+                    textColor="#AAAAAA"
+                    marginTop="4" />
+
+                <brls:Box
+                    id="comments/sorts"
+                    width="auto"
+                    height="auto"
+                    axis="row"
+                    marginTop="14"
+                    visibility="gone" />
+
+                <brls:Box
+                    id="comments/list"
+                    width="auto"
+                    height="auto"
+                    axis="column"
+                    marginTop="10" />
+
+                <brls:Label
+                    id="comments/status"
+                    width="auto"
+                    height="auto"
+                    fontSize="14"
+                    textColor="#909090"
+                    marginTop="10"
+                    marginLeft="12" />
+            </brls:Box>
         </brls:ScrollingFrame>
     </brls:Box>
 </brls:AppletFrame>

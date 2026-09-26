@@ -4,6 +4,8 @@
 #include <iterator>
 
 #include "nlohmann/json.hpp"
+#include "newpipe/app_paths.hpp"
+#include "newpipe/content_locale.hpp"
 #include "newpipe/log.hpp"
 
 namespace newpipe {
@@ -50,7 +52,7 @@ std::string sanitize_startup_tab(std::string value) {
 }
 
 std::string sanitize_language(std::string value) {
-    for (const char* allowed : {"auto", "ko", "en-US"}) {
+    for (const char* allowed : {"auto", "ko", "en-US", "tr"}) {
         if (value == allowed) {
             return value;
         }
@@ -91,6 +93,11 @@ json serialize_settings(const AppSettings& settings) {
         {"home_kiosk", settings.home_kiosk},
         {"playback_quality", static_cast<int>(settings.playback_quality)},
         {"hide_short_videos", settings.hide_short_videos},
+        {"hardware_decoding", settings.hardware_decoding},
+        {"autoplay_next", settings.autoplay_next},
+        {"skip_sponsors", settings.skip_sponsors},
+        {"subtitles_enabled", settings.subtitles_enabled},
+        {"subtitle_language", settings.subtitle_language},
     };
 }
 
@@ -102,17 +109,18 @@ AppSettings deserialize_settings(const json& root) {
     settings.playback_quality =
         sanitize_playback_quality(root.value("playback_quality", 0));
     settings.hide_short_videos = root.value("hide_short_videos", false);
+    settings.hardware_decoding = root.value("hardware_decoding", false);
+    settings.autoplay_next = root.value("autoplay_next", true);
+    settings.skip_sponsors = root.value("skip_sponsors", true);
+    settings.subtitles_enabled = root.value("subtitles_enabled", false);
+    settings.subtitle_language = get_string(root, "subtitle_language");
     return settings;
 }
 
 }  // namespace
 
 std::string default_settings_store_path() {
-#ifdef __SWITCH__
-    return "sdmc:/switch/switch_newpipe_settings.json";
-#else
-    return "switch_newpipe_settings.json";
-#endif
+    return app_file_path("settings.json");
 }
 
 SettingsStore& SettingsStore::instance() {
@@ -142,7 +150,7 @@ bool SettingsStore::load(std::string* error_message) {
     const json root = json::parse(raw, nullptr, false);
     if (root.is_discarded() || !root.is_object()) {
         if (error_message) {
-            *error_message = "설정 파일 파싱 실패";
+            *error_message = localized("Ayar dosyası çözümlenemedi", "Could not read the settings file");
         }
         return false;
     }
@@ -246,6 +254,73 @@ bool SettingsStore::update_hide_short_videos(bool hide_short_videos, std::string
     return this->persist(error_message);
 }
 
+bool SettingsStore::update_hardware_decoding(bool hardware_decoding, std::string* error_message) {
+    if (!this->ensure_loaded(error_message)) {
+        return false;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(this->mutex_);
+        this->settings_.hardware_decoding = hardware_decoding;
+    }
+
+    return this->persist(error_message);
+}
+
+bool SettingsStore::update_autoplay_next(bool autoplay_next, std::string* error_message) {
+    if (!this->ensure_loaded(error_message)) {
+        return false;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(this->mutex_);
+        this->settings_.autoplay_next = autoplay_next;
+    }
+
+    return this->persist(error_message);
+}
+
+bool SettingsStore::update_skip_sponsors(bool skip_sponsors, std::string* error_message) {
+    if (!this->ensure_loaded(error_message)) {
+        return false;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(this->mutex_);
+        this->settings_.skip_sponsors = skip_sponsors;
+    }
+
+    return this->persist(error_message);
+}
+
+bool SettingsStore::update_subtitles_enabled(bool subtitles_enabled, std::string* error_message) {
+    if (!this->ensure_loaded(error_message)) {
+        return false;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(this->mutex_);
+        this->settings_.subtitles_enabled = subtitles_enabled;
+    }
+
+    return this->persist(error_message);
+}
+
+bool SettingsStore::update_subtitles(bool subtitles_enabled, const std::string& subtitle_language,
+                                     std::string* error_message) {
+    if (!this->ensure_loaded(error_message)) {
+        return false;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(this->mutex_);
+        this->settings_.subtitles_enabled = subtitles_enabled;
+        this->settings_.subtitle_language = subtitle_language;
+    }
+
+    return this->persist(error_message);
+}
+
 bool SettingsStore::reset(std::string* error_message) {
     if (!this->ensure_loaded(error_message)) {
         return false;
@@ -279,7 +354,7 @@ bool SettingsStore::persist(std::string* error_message) {
 
     if (!write_text_file(default_settings_store_path(), root.dump(2))) {
         if (error_message) {
-            *error_message = "설정 저장 실패";
+            *error_message = localized("Ayarlar kaydedilemedi", "Could not save the settings");
         }
         return false;
     }

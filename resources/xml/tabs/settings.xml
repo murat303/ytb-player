@@ -1,29 +1,125 @@
+<!-- Settings in two panes, as YouTube's tablet app has them: the kinds of settings with their
+     coloured icons on the left, the chosen kind's settings in a rounded box on the right. The
+     cells keep their ids; SettingsTab only shows one group at a time. -->
 <brls:Box
     width="auto"
-    height="auto">
-    <brls:ScrollingFrame
+    height="auto"
+    axis="column"
+    paddingTop="12"
+    paddingLeft="20"
+    paddingRight="20">
+
+    <PageHeader id="settings/header" title="@i18n/app/settings" />
+
+    <brls:Box
         width="auto"
         height="auto"
-        axis="column"
-        alignItems="stretch"
-        scrollingBehavior="centered"
-        grow="1.0">
+        grow="1.0"
+        axis="row"
+        paddingBottom="12">
+
         <brls:Box
-            width="10000"
+            id="settings/categories"
+            width="330"
             height="auto"
             axis="column"
-            alignItems="stretch"
-            paddingTop="@style/brls/sidebar/padding_top"
-            paddingRight="@style/brls/sidebar/padding_right"
-            paddingBottom="@style/brls/sidebar/padding_bottom"
-            paddingLeft="@style/brls/sidebar/padding_left">
-            <brls:SelectorCell id="settings/language"/>
-            <brls:SelectorCell id="settings/playback_quality"/>
-            <brls:SelectorCell id="settings/startup_tab"/>
-            <brls:SelectorCell id="settings/home_kiosk"/>
-            <brls:BooleanCell id="settings/hide_shorts"/>
-            <brls:DetailCell id="settings/session"/>
-            <brls:DetailCell id="settings/storage"/>
-        </brls:Box>
-    </brls:ScrollingFrame>
+            paddingTop="8"
+            paddingBottom="8"
+            paddingLeft="8"
+            paddingRight="8"
+            cornerRadius="16"
+            borderColor="#303030"
+            borderThickness="1" />
+
+        <brls:ScrollingFrame
+            id="settings/scroll"
+            width="auto"
+            height="auto"
+            grow="1.0"
+            marginLeft="20">
+
+            <brls:Box
+                width="auto"
+                height="auto"
+                axis="column">
+
+                <brls:Label
+                    id="settings/category_title"
+                    width="auto"
+                    height="auto"
+                    fontSize="22"
+                    textColor="#FFFFFF"
+                    marginTop="4"
+                    marginBottom="12"
+                    marginLeft="4" />
+
+                <brls:Box
+                    id="settings/group_general"
+                    width="auto"
+                    height="auto"
+                    axis="column"
+                    paddingTop="6"
+                    paddingBottom="6"
+                    paddingLeft="12"
+                    paddingRight="12"
+                    cornerRadius="16"
+                    backgroundColor="#1F1F1F">
+                    <brls:SelectorCell id="settings/language" />
+                    <brls:SelectorCell id="settings/startup_tab" />
+                    <brls:SelectorCell id="settings/home_kiosk" />
+                </brls:Box>
+
+                <brls:Box
+                    id="settings/group_video"
+                    width="auto"
+                    height="auto"
+                    axis="column"
+                    paddingTop="6"
+                    paddingBottom="6"
+                    paddingLeft="12"
+                    paddingRight="12"
+                    cornerRadius="16"
+                    backgroundColor="#1F1F1F"
+                    visibility="gone">
+                    <brls:SelectorCell id="settings/playback_quality" />
+                    <brls:BooleanCell id="settings/autoplay_next" />
+                    <brls:BooleanCell id="settings/subtitles" />
+                    <brls:BooleanCell id="settings/skip_sponsors" />
+                    <brls:BooleanCell id="settings/hide_shorts" />
+                    <brls:BooleanCell id="settings/hardware_decoding" />
+                </brls:Box>
+
+                <brls:Box
+                    id="settings/group_account"
+                    width="auto"
+                    height="auto"
+                    axis="column"
+                    paddingTop="6"
+                    paddingBottom="6"
+                    paddingLeft="12"
+                    paddingRight="12"
+                    cornerRadius="16"
+                    backgroundColor="#1F1F1F"
+                    visibility="gone">
+                    <brls:DetailCell id="settings/account" />
+                    <brls:DetailCell id="settings/session" />
+                </brls:Box>
+
+                <brls:Box
+                    id="settings/group_storage"
+                    width="auto"
+                    height="auto"
+                    axis="column"
+                    paddingTop="6"
+                    paddingBottom="6"
+                    paddingLeft="12"
+                    paddingRight="12"
+                    cornerRadius="16"
+                    backgroundColor="#1F1F1F"
+                    visibility="gone">
+                    <brls:DetailCell id="settings/storage" />
+                </brls:Box>
+            </brls:Box>
+        </brls:ScrollingFrame>
+    </brls:Box>
 </brls:Box>
