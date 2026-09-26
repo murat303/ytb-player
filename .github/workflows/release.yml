@@ -1,13 +1,13 @@
 name: Release Build
 
+# Builds ytb-player.nro in the cloud when started by hand (Actions > Release Build > Run
+# workflow). Releases carry the build that was tried on a console, so publishing one does not
+# start this and nothing replaces that file.
 on:
-  release:
-    types:
-      - published
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build-switch-release:
@@ -50,13 +50,3 @@ jobs:
           path: |
             dist/ytb-player.nro
             dist/SHA256SUMS.txt
-
-      - name: Upload assets to GitHub Release
-        if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            dist/ytb-player.nro
-            dist/SHA256SUMS.txt
-          fail_on_unmatched_files: true
-          overwrite_files: true
