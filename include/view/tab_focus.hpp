@@ -49,6 +49,16 @@ inline void register_tab_step(AttachedView* tab, const std::function<void(int)>&
     }, true);
 }
 
+// L/R moved to another tab from inside the page: back to the top, where the chips are, and the
+// focus on the new chip, so that down leads to the new list's first video. Scrolling first
+// keeps the chip in view; a NATURAL frame takes the focus itself from a view outside it.
+inline void focus_tab_chip(brls::View* chip, brls::ScrollingFrame* frame) {
+    if (frame) {
+        frame->setContentOffsetY(0, false);
+    }
+    brls::Application::giveFocus(chip);
+}
+
 // Rows of Shorts are taller than half the screen. A NATURAL frame moves the focus to the next
 // row only once all of it is in view and a quick press scrolls less than that, so the focus
 // ended on the frame itself, where nothing shows it. Such rows are centred instead.

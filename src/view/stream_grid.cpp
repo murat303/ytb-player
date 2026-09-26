@@ -64,9 +64,13 @@ void StreamGrid::clear() {
         newpipe::release_grid_focus(owner_, grid_);
         grid_->clearViews();
         // A refresh from deep in a long list left the frame scrolled past the new, short
-        // content, so the tab looked empty.
-        if (auto* frame = dynamic_cast<brls::ScrollingFrame*>(grid_->getParent())) {
-            frame->setContentOffsetY(0, false);
+        // content, so the tab looked empty. The frame is the nearest one above the grid: on
+        // Home and Subscriptions the chips (and channels) scroll with it.
+        for (brls::View* view = grid_->getParent(); view; view = view->getParent()) {
+            if (auto* frame = dynamic_cast<brls::ScrollingFrame*>(view)) {
+                frame->setContentOffsetY(0, false);
+                break;
+            }
         }
     }
 }

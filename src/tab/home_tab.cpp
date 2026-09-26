@@ -208,7 +208,7 @@ void HomeTab::stepKiosk(int delta) {
         return;
     }
     if (newpipe::focus_inside(this) && static_cast<size_t>(index) < chips_.size()) {
-        brls::Application::giveFocus(chips_[index]);
+        newpipe::focus_tab_chip(chips_[index], scrollFrame);
     }
     selectKiosk(static_cast<size_t>(index));
 }

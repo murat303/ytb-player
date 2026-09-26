@@ -30,9 +30,11 @@ constexpr size_t kMaxHeaderBytes = 16 * 1024;
 // "Get cookies.txt LOCALLY" (open source, sends nothing anywhere), the extension yt-dlp suggests.
 constexpr const char* kStores =
     "<span class=\"stores\">"
-    "<a href=\"https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc\">"
+    "<a target=\"_blank\" rel=\"noopener noreferrer\" "
+    "href=\"https://chromewebstore.google.com/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc\">"
     "Chrome / Edge</a>"
-    "<a href=\"https://addons.mozilla.org/firefox/addon/get-cookies-txt-locally/\">Firefox</a></span>";
+    "<a target=\"_blank\" rel=\"noopener noreferrer\" "
+    "href=\"https://addons.mozilla.org/firefox/addon/get-cookies-txt-locally/\">Firefox</a></span>";
 
 // The page looks like the app: YouTube's dark colors and the app's disc as the logo. Nothing
 // is loaded from elsewhere.

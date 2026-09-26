@@ -355,7 +355,7 @@ void SubscriptionsTab::stepFilter(int delta) {
         return;
     }
     if (newpipe::focus_inside(this)) {
-        brls::Application::giveFocus(this->chips_[index]);
+        newpipe::focus_tab_chip(this->chips_[index], this->scrollFrame);
     }
     this->applyFilter(static_cast<Filter>(index));
 }
